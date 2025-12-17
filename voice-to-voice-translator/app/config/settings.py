@@ -77,13 +77,24 @@ class Settings(BaseSettings):
     
     # Security
     enable_auth: bool = Field(default=False, description="Enable authentication")
-    jwt_secret: str = Field(
+    jwt_secret_key: str = Field(
         default="your-secret-key-change-in-production",
         description="JWT secret key"
     )
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expiration: int = Field(default=3600, description="JWT expiration in seconds")
+    api_keys: list[str] = Field(default_factory=list, description="Valid API keys")
+    
+    # Rate Limiting
     rate_limit_per_minute: int = Field(default=60, description="Rate limit per minute")
+    max_requests_per_minute: int = Field(default=100, description="Max requests per minute")
+    max_connections_per_ip: int = Field(default=10, description="Max connections per IP")
+    max_messages_per_second: int = Field(default=10, description="Max messages per second per connection")
+    
+    # Worker Pools
+    translation_workers: int = Field(default=4, description="Number of translation workers")
+    tts_workers: int = Field(default=2, description="Number of TTS workers")
+
     
     # Monitoring
     enable_metrics: bool = Field(default=True, description="Enable metrics collection")
