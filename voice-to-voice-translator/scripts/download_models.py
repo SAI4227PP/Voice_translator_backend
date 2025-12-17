@@ -34,55 +34,108 @@ def download_vosk_models():
     models_dir = Path("models/stt")
     models_dir.mkdir(parents=True, exist_ok=True)
     
-    # Vosk English model (small version for faster performance)
-    en_model_url = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
-    en_model_path = models_dir / "vosk-model-en.zip"
+    # Define all language models to download
+    models = {
+        "en": {
+            "url": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
+            "extracted_name": "vosk-model-small-en-us-0.15",
+            "display_name": "English"
+        },
+        "hi": {
+            "url": "https://alphacephei.com/vosk/models/vosk-model-hi-0.22.zip",
+            "extracted_name": "vosk-model-hi-0.22",
+            "display_name": "Hindi"
+        },
+        "te": {
+            "url": "https://alphacephei.com/vosk/models/vosk-model-small-te-0.4.zip",
+            "extracted_name": "vosk-model-small-te-0.4",
+            "display_name": "Telugu"
+        },
+        "ta": {
+            "url": "https://alphacephei.com/vosk/models/vosk-model-ta-0.4.zip",
+            "extracted_name": "vosk-model-ta-0.4",
+            "display_name": "Tamil"
+        },
+        "kn": {
+            "url": "https://alphacephei.com/vosk/models/vosk-model-small-kn-0.4.zip",
+            "extracted_name": "vosk-model-small-kn-0.4",
+            "display_name": "Kannada"
+        },
+        "ml": {
+            "url": "https://alphacephei.com/vosk/models/vosk-model-small-ml-0.4.zip",
+            "extracted_name": "vosk-model-small-ml-0.4",
+            "display_name": "Malayalam"
+        },
+        "gu": {
+            "url": "https://alphacephei.com/vosk/models/vosk-model-small-gu-0.4.zip",
+            "extracted_name": "vosk-model-small-gu-0.4",
+            "display_name": "Gujarati"
+        },
+        "mr": {
+            "url": "https://alphacephei.com/vosk/models/vosk-model-small-mr-0.4.zip",
+            "extracted_name": "vosk-model-small-mr-0.4",
+            "display_name": "Marathi"
+        },
+        "bn": {
+            "url": "https://alphacephei.com/vosk/models/vosk-model-small-bn-0.4.zip",
+            "extracted_name": "vosk-model-small-bn-0.4",
+            "display_name": "Bengali"
+        }
+    }
     
-    if not (models_dir / "vosk-en").exists():
-        print("Downloading English model...")
-        download_file(en_model_url, en_model_path)
+    # Download and extract each model
+    for lang_code, model_info in models.items():
+        target_dir = models_dir / f"vosk-{lang_code}"
         
-        print("Extracting English model...")
-        with zipfile.ZipFile(en_model_path, 'r') as zip_ref:
-            zip_ref.extractall(models_dir)
+        if target_dir.exists():
+            print(f"{model_info['display_name']} model already exists, skipping...")
+            continue
         
-        # Rename to expected directory
-        extracted_dir = models_dir / "vosk-model-small-en-us-0.15"
-        if extracted_dir.exists():
-            extracted_dir.rename(models_dir / "vosk-en")
+        print(f"\nDownloading {model_info['display_name']} model...")
+        model_path = models_dir / f"vosk-model-{lang_code}.zip"
+        Define language pairs to install
+        language_pairs = [
+            ("en", "hi", "English", "Hindi"),
+            ("hi", "en", "Hindi", "English"),
+            ("en", "te", "English", "Telugu"),
+            ("te", "en", "Telugu", "English"),
+            ("en", "ta", "English", "Tamil"),
+            ("ta", "en", "Tamil", "English"),
+            ("en", "kn", "English", "Kannada"),
+            ("kn", "en", "Kannada", "English"),
+            ("en", "ml", "English", "Malayalam"),
+            ("ml", "en", "Malayalam", "English"),
+            ("en", "gu", "English", "Gujarati"),
+            ("gu", "en", "Gujarati", "English"),
+            ("en", "mr", "English", "Marathi"),
+            ("mr", "en", "Marathi", "English"),
+            ("en", "bn", "English", "Bengali"),
+            ("bn", "en", "Bengali", "English"),
+        ]
         
-        en_model_path.unlink()  # Delete zip file
-        print("English model installed!")
-    else:
-        print("English model already exists, skipping...")
-    
-    # Vosk Hindi model
-    hi_model_url = "https://alphacephei.com/vosk/models/vosk-model-hi-0.22.zip"
-    hi_model_path = models_dir / "vosk-model-hi.zip"
-    
-    if not (models_dir / "vosk-hi").exists():
-        print("Downloading Hindi model...")
-        download_file(hi_model_url, hi_model_path)
+        installed_count = 0
         
-        print("Extracting Hindi model...")
-        with zipfile.ZipFile(hi_model_path, 'r') as zip_ref:
-            zip_ref.extractall(models_dir)
+        for from_code, to_code, from_name, to_name in language_pairs:
+            print(f"\nInstalling {from_name} to {to_name} translation package...")
+            
+            packages = [
+                pkg for pkg in available_packages
+                if pkg.from_code == from_code and pkg.to_code == to_code
+            ]
+            
+            if packages:
+                try:
+                    argostranslate.package.install_from_path(
+                        packages[0].download()
+                    )
+                    print(f"{from_name} to {to_name} package installed!")
+                    installed_count += 1
+                except Exception as e:
+                    print(f"Warning: Could not install {from_name} to {to_name}: {e}")
+            else:
+                print(f"Warning: {from_name} to {to_name} package not available")
         
-        # Rename to expected directory
-        extracted_dir = models_dir / "vosk-model-hi-0.22"
-        if extracted_dir.exists():
-            extracted_dir.rename(models_dir / "vosk-hi")
-        
-        hi_model_path.unlink()  # Delete zip file
-        print("Hindi model installed!")
-    else:
-        print("Hindi model already exists, skipping...")
-
-
-def install_argos_packages():
-    """Install Argos Translate packages."""
-    print("\n=== Installing Argos Translate Packages ===")
-    
+        print(f"\nArgos Translate packages: {installed_count}
     try:
         import argostranslate.package
         
