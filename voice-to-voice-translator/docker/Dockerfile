@@ -47,17 +47,26 @@ FROM python-deps as model-downloader
 WORKDIR /app
 
 # Create model directories
-RUN mkdir -p models/stt models/translate models/tts
+RUN mkdir -p models/stt models/translate models/tts && \
+    echo "Model directories created:" && \
+    ls -la models/
 
 # Copy model download script
 COPY scripts/download_models.py scripts/
 
 # Download all language models (this may take a while)
-# Set a flag to skip interactive prompts
-ENV DOWNLOAD_MODELS=1
+# Set environment to non-interactive
+ENV DOWNLOAD_MODELS=1 \
+    DEBIAN_FRONTEND=noninteractive
 
-# Download models with error handling
-RUN python scripts/download_models.py || \
+# Download models - show errors but continue if they fail
+RUN echo "Starting model download..." && \
+    python scripts/download_models.py && \
+    echo "Model download completed!" && \
+    echo "Checking downloaded models:" && \
+    ls -la models/stt/ || true && \
+    ls -la models/translate/ || true && \
+    ls -la models/tts/ || true || \
     echo "Warning: Some models failed to download. They will be downloaded on first use."
 
 # Stage 4: Final production image
@@ -77,7 +86,7 @@ COPY --from=model-downloader /app/models /app/models
 COPY app/ ./app/
 COPY scripts/ ./scripts/
 COPY docs/ ./docs/
-COPY .env.example .env
+COPY .env .env.example
 COPY requirements.txt .
 COPY README.md .
 COPY GETTING_STARTED.md .
@@ -95,19 +104,31 @@ RUN mkdir -p logs data && \
 USER appuser
 
 # Expose port
-EXPOSE 8000
+EXPOSE 7860
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:7860/health || exit 1
 
 # Set default environment variables
 ENV HOST=0.0.0.0 \
-    PORT=8000 \
-    WORKERS=4 \
+    PORT=7860 \
+    WORKERS=1 \
     LOG_LEVEL=INFO \
     ENVIRONMENT=production \
-    DEBUG=False
+    DEBUG=False \
+    NUMBA_CACHE_DIR=/tmp/numba_cache \
+    NUMBA_DISABLE_JIT=0 \
+    HOME=/tmp \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    FONTCONFIG_PATH=/tmp/fontconfig \
+    ARGOS_PACKAGES_DIR=/tmp/argostranslate
+
+# Create cache directories with proper permissions
+USER root
+RUN mkdir -p /tmp/numba_cache /tmp/matplotlib /tmp/fontconfig /tmp/argostranslate && \
+    chmod -R 777 /tmp/numba_cache /tmp/matplotlib /tmp/fontconfig /tmp/argostranslate
+USER appuser
 
 # Run application with uvicorn for production
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--log-level", "info"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1", "--log-level", "info"]

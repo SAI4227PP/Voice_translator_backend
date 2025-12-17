@@ -31,13 +31,70 @@ class Translator:
             logger.error("translator_init_failed", error=str(e), exc_info=True)
             raise
     
+    async def _ensure_package_installed(
+        self,
+        source_lang: str,
+        target_lang: str
+    ) -> bool:
+        """Auto-install translation package if not available.
+        
+        Args:
+            source_lang: Source language code
+            target_lang: Target language code
+            
+        Returns:
+            True if package is available or was installed successfully
+        """
+        if not self.engine:
+            return False
+        
+        # Check if already available
+        if self.engine.is_language_pair_available(source_lang, target_lang):
+            return True
+        
+        logger.info(
+            "auto_installing_translation_package",
+            source=source_lang,
+            target=target_lang
+        )
+        
+        try:
+            # Install the package
+            success = await self.engine.install_language_pair(source_lang, target_lang)
+            
+            if success:
+                logger.info(
+                    "translation_package_installed",
+                    source=source_lang,
+                    target=target_lang
+                )
+            else:
+                logger.warning(
+                    "translation_package_install_failed",
+                    source=source_lang,
+                    target=target_lang
+                )
+            
+            return success
+        except Exception as e:
+            logger.error(
+                "translation_package_install_error",
+                source=source_lang,
+                target=target_lang,
+                error=str(e)
+            )
+            return False
+    
     async def translate(
         self,
         text: str,
         source_lang: str,
         target_lang: str
     ) -> str:
-        """Translate text.
+        """Translate text with automatic bridge language support via English.
+        
+        Uses English as a universal bridge language for any language pair.
+        Tries direct translation first, then falls back to bridge translation.
         
         Args:
             text: Text to translate
@@ -53,13 +110,82 @@ class Translator:
         if not self.engine:
             raise ConfigurationError("Translation engine not initialized")
         
-        # Check if language pair is available
-        if not self.engine.is_language_pair_available(source_lang, target_lang):
-            raise UnsupportedLanguageError(
-                f"Language pair {source_lang}->{target_lang} not available"
-            )
+        # Skip if source and target are the same
+        if source_lang == target_lang:
+            logger.info("same_language_skipping_translation", lang=source_lang)
+            return text
         
-        return await self.engine.translate_async(text, source_lang, target_lang)
+        # Try to auto-install direct translation package
+        if not self.engine.is_language_pair_available(source_lang, target_lang):
+            logger.info(
+                "package_not_found_attempting_install",
+                source=source_lang,
+                target=target_lang
+            )
+            installed = await self._ensure_package_installed(source_lang, target_lang)
+            
+            if installed:
+                logger.info(
+                    "package_installed_will_use",
+                    source=source_lang,
+                    target=target_lang
+                )
+        
+        # Check if direct translation is available (after potential install)
+        if self.engine.is_language_pair_available(source_lang, target_lang):
+            logger.info(
+                "direct_translation",
+                source=source_lang,
+                target=target_lang
+            )
+            return await self.engine.translate_async(text, source_lang, target_lang)
+        
+        # If direct translation not available, try bridge via English for ALL language pairs
+        # Skip bridge if source or target is already English
+        if source_lang != "en" and target_lang != "en":
+            logger.info(
+                "attempting_bridge_translation_via_english",
+                source=source_lang,
+                target=target_lang
+            )
+            
+            # Try to install bridge packages if not available
+            if not self.engine.is_language_pair_available(source_lang, "en"):
+                logger.info("installing_bridge_package_source_to_en", source=source_lang)
+                await self._ensure_package_installed(source_lang, "en")
+            
+            if not self.engine.is_language_pair_available("en", target_lang):
+                logger.info("installing_bridge_package_en_to_target", target=target_lang)
+                await self._ensure_package_installed("en", target_lang)
+            
+            # Check if bridge is possible
+            if (self.engine.is_language_pair_available(source_lang, "en") and
+                    self.engine.is_language_pair_available("en", target_lang)):
+                
+                logger.info("using_bridge_translation", source=source_lang, target=target_lang)
+                
+                # Two-step translation: source→English→target
+                english_text = await self.engine.translate_async(text, source_lang, "en")
+                logger.debug("bridge_step_1_complete", source=source_lang, english_preview=english_text[:50])
+                
+                final_text = await self.engine.translate_async(english_text, "en", target_lang)
+                logger.debug("bridge_step_2_complete", target=target_lang, result_preview=final_text[:50])
+                
+                return final_text
+        
+        # Log detailed info about what packages are available
+        logger.warning(
+            "no_translation_path_found",
+            source=source_lang,
+            target=target_lang,
+            message=f"Could not find or install translation for {source_lang}→{target_lang}"
+        )
+        
+        # If no translation path available after installation attempts
+        raise UnsupportedLanguageError(
+            f"Language pair {source_lang}→{target_lang} not available and could not be installed. "
+            f"Package may not exist in Argos Translate repository."
+        )
     
     async def batch_translate(
         self,

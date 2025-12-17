@@ -1,16 +1,44 @@
 """
 Main application entry point.
 """
+import os
 import asyncio
 import uvicorn
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from pydantic import BaseModel, Field
+from typing import List, Optional
+
+# Configure environment variables before any imports that might use numba
+os.environ['NUMBA_CACHE_DIR'] = '/tmp/numba_cache'
+os.environ.setdefault('NUMBA_DISABLE_JIT', '0')
+# Configure matplotlib and fontconfig to use writable directories
+os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib'
+os.environ['FONTCONFIG_PATH'] = '/tmp/fontconfig'
+os.environ.setdefault('HOME', '/tmp')
+# Configure argostranslate to use writable directory
+os.environ['ARGOS_PACKAGES_DIR'] = '/tmp/argostranslate'
 
 from app.config import setup_logging, get_settings, logger
 from app.server import get_websocket_server
 
 settings = get_settings()
+
+
+# Pydantic models for request validation
+class TranslateRequest(BaseModel):
+    """Request model for text translation."""
+    text: str = Field(..., description="Text to translate")
+    source_language: str = Field(..., description="Source language code (e.g., 'en')")
+    target_language: str = Field(..., description="Target language code (e.g., 'es')")
+
+
+class BatchTranslateRequest(BaseModel):
+    """Request model for batch text translation."""
+    texts: List[str] = Field(..., description="List of texts to translate", max_items=100)
+    source_language: str = Field(..., description="Source language code")
+    target_language: str = Field(..., description="Target language code")
 
 
 @asynccontextmanager
@@ -133,6 +161,31 @@ async def get_server_statistics():
 @app.get("/config")
 async def get_system_configuration():
     """Get current system configuration."""
+    from app.utils.model_scanner import ModelScanner
+    
+    # Get dynamic language information from model scanner
+    scanner = ModelScanner()
+    stt_languages = scanner.get_available_stt_languages()
+    translation_languages = scanner.get_available_translation_languages()
+    tts_languages = scanner.get_available_tts_languages()
+    
+    # Convert to simple dict for supported_languages field
+    supported_langs = {}
+    
+    # Add STT languages
+    for code, info in stt_languages.items():
+        supported_langs[code] = info.get("name", code.upper())
+    
+    # Add translation languages (merge with STT)
+    for code, info in translation_languages.items():
+        if code not in supported_langs:
+            supported_langs[code] = info.get("name", code.upper())
+    
+    # Add TTS languages (merge with previous)
+    for code, info in tts_languages.items():
+        if code not in supported_langs and code != "multilingual":
+            supported_langs[code] = info.get("name", code.upper())
+    
     return {
         "audio": {
             "sample_rate": settings.audio_sample_rate,
@@ -144,20 +197,51 @@ async def get_system_configuration():
             "max_connections": settings.max_connections,
             "max_connections_per_ip": settings.max_connections_per_ip,
             "max_users_per_room": settings.max_users_per_room,
-            "max_message_size": settings.max_message_size
+            "max_message_size": settings.max_message_size,
+            "idle_timeout": settings.idle_timeout,
+            "room_timeout": settings.room_timeout
         },
         "rate_limits": {
             "messages_per_second": settings.max_messages_per_second,
-            "requests_per_minute": settings.max_requests_per_minute
+            "requests_per_minute": settings.max_requests_per_minute,
+            "rate_limit_per_minute": settings.rate_limit_per_minute
         },
         "workers": {
             "translation_workers": settings.translation_workers,
-            "tts_workers": settings.tts_workers
+            "tts_workers": settings.tts_workers,
+            "worker_threads": settings.worker_threads,
+            "queue_size": settings.queue_size
+        },
+        "models": {
+            "stt_engine": settings.stt_engine,
+            "translation_engine": settings.translation_engine,
+            "tts_engine": settings.tts_engine,
+            "vosk_model_base_path": settings.vosk_model_base_path,
+            "argos_model_path": settings.argos_model_path,
+            "coqui_model_path": settings.coqui_model_path,
+            "available_models": {
+                "stt": stt_languages,
+                "translation": translation_languages,
+                "tts": tts_languages
+            },
+            "supported_languages": supported_langs
         },
         "features": {
             "authentication_enabled": settings.enable_auth,
             "rate_limiting_enabled": True,
-            "metrics_enabled": settings.enable_metrics
+            "metrics_enabled": settings.enable_metrics,
+            "gpu_enabled": settings.enable_gpu
+        },
+        "websocket": {
+            "ping_interval": settings.ws_ping_interval,
+            "ping_timeout": settings.ws_ping_timeout
+        },
+        "environment": {
+            "env": settings.environment,
+            "debug": settings.debug,
+            "host": settings.host,
+            "port": settings.port,
+            "cors_origins": settings.cors_origins
         }
     }
 
@@ -188,6 +272,164 @@ async def get_translation_pairs():
         "pairs": pairs,
         "count": len(pairs)
     }
+
+
+@app.post("/translate")
+async def translate_text(request: TranslateRequest):
+    """Translate text without audio processing.
+    
+    Request body:
+        {
+            "text": "Hello, how are you?",
+            "source_language": "en",
+            "target_language": "es"
+        }
+    """
+    from app.pipeline.translate import get_translator
+    from app.utils.model_scanner import ModelScanner
+    import time
+    
+    try:
+        # Get available languages dynamically
+        scanner = ModelScanner()
+        available_languages = scanner.get_available_translation_languages()
+        
+        # Check if source language is in supported languages
+        if request.source_language not in available_languages:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": f"Source language '{request.source_language}' is not supported",
+                    "available_languages": list(available_languages.keys()),
+                    "message": "Check /languages/supported for available languages"
+                }
+            )
+        
+        # Check if target language is in supported languages
+        if request.target_language not in available_languages:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": f"Target language '{request.target_language}' is not supported",
+                    "available_languages": list(available_languages.keys()),
+                    "message": "Check /languages/supported for available languages"
+                }
+            )
+        
+        # Don't check for specific pair availability - let translator auto-install
+        # The translator will handle package installation if needed
+        
+        # Get translator and translate (with auto-install)
+        translator = get_translator()
+        
+        start_time = time.time()
+        translated_text = await translator.translate(
+            request.text, 
+            request.source_language, 
+            request.target_language
+        )
+        processing_time = (time.time() - start_time) * 1000
+        
+        return {
+            "original_text": request.text,
+            "translated_text": translated_text,
+            "source_language": request.source_language,
+            "target_language": request.target_language,
+            "processing_time_ms": round(processing_time, 2)
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("translation_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Translation failed: {str(e)}"
+        )
+
+
+@app.post("/translate/batch")
+async def translate_batch(request: BatchTranslateRequest):
+    """Translate multiple texts in one request.
+    
+    Request body:
+        {
+            "texts": ["Hello", "How are you?", "Goodbye"],
+            "source_language": "en",
+            "target_language": "es"
+        }
+    """
+    from app.pipeline.translate import get_translator
+    from app.utils.model_scanner import ModelScanner
+    import time
+    
+    try:
+        # Get available languages dynamically
+        scanner = ModelScanner()
+        available_languages = scanner.get_available_translation_languages()
+        translation_pairs = scanner.get_translation_pairs()
+        
+        # Check if source language is available
+        if request.source_language not in available_languages:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": f"Source language '{request.source_language}' is not available",
+                    "available_languages": list(available_languages.keys()),
+                    "message": "Check /languages/supported for available languages"
+                }
+            )
+        
+        # Check if target language is in supported languages
+        if request.target_language not in available_languages:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": f"Target language '{request.target_language}' is not supported",
+                    "available_languages": list(available_languages.keys()),
+                    "message": "Check /languages/supported for available languages"
+                }
+            )
+        
+        # Don't check for specific pair availability - let translator auto-install
+        # The translator will handle package installation if needed
+        
+        # Get translator (with auto-install support)
+        translator = get_translator()
+        
+        # Translate all texts
+        start_time = time.time()
+        translations = []
+        
+        for text in request.texts:
+            translated_text = await translator.translate(
+                text, 
+                request.source_language, 
+                request.target_language
+            )
+            translations.append({
+                "original": text,
+                "translated": translated_text
+            })
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return {
+            "translations": translations,
+            "source_language": request.source_language,
+            "target_language": request.target_language,
+            "total": len(translations),
+            "processing_time_ms": round(processing_time, 2)
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("batch_translation_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Batch translation failed: {str(e)}"
+        )
 
 
 @app.websocket("/ws")

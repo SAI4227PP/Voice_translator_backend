@@ -197,6 +197,137 @@ class ArgosEngine:
                 return True
         return False
     
+    async def install_language_pair(
+        self,
+        source_lang: str,
+        target_lang: str
+    ) -> bool:
+        """Install translation package for language pair.
+        
+        Args:
+            source_lang: Source language code
+            target_lang: Target language code
+            
+        Returns:
+            True if installation successful
+        """
+        # Run the blocking installation in an executor
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self._install_language_pair_sync,
+            source_lang,
+            target_lang
+        )
+    
+    def _install_language_pair_sync(
+        self,
+        source_lang: str,
+        target_lang: str
+    ) -> bool:
+        """Synchronous installation logic.
+        
+        Args:
+            source_lang: Source language code
+            target_lang: Target language code
+            
+        Returns:
+            True if installation successful
+        """
+        try:
+            import os
+            os.environ.setdefault('ARGOS_PACKAGES_DIR', '/tmp/argostranslate')
+            os.environ.setdefault('HOME', '/tmp')
+            
+            logger.info(
+                "installing_translation_package",
+                source=source_lang,
+                target=target_lang
+            )
+            
+            # Update package index
+            argostranslate.package.update_package_index()
+            
+            # Get available packages
+            available_packages = argostranslate.package.get_available_packages()
+            
+            logger.info(
+                "available_packages_count",
+                count=len(available_packages),
+                source=source_lang,
+                target=target_lang
+            )
+            
+            # Find the package for this language pair
+            target_package = None
+            for package in available_packages:
+                if package.from_code == source_lang and package.to_code == target_lang:
+                    target_package = package
+                    logger.info(
+                        "found_package_to_install",
+                        source=source_lang,
+                        target=target_lang,
+                        package_name=package.package_version
+                    )
+                    break
+            
+            if not target_package:
+                logger.warning(
+                    "translation_package_not_found_in_repo",
+                    source=source_lang,
+                    target=target_lang,
+                    message=f"No package found for {source_lang}→{target_lang} in Argos repository"
+                )
+                return False
+            
+            # Download and install the package
+            logger.info(
+                "downloading_translation_package",
+                source=source_lang,
+                target=target_lang,
+                package=target_package.package_version
+            )
+            
+            download_path = target_package.download()
+            logger.info("package_downloaded", path=download_path)
+            
+            argostranslate.package.install_from_path(download_path)
+            logger.info("package_installed_from_path", path=download_path)
+            
+            # Update installed packages list
+            self.installed_languages = argostranslate.package.get_installed_packages()
+            
+            # Clear translation cache since new packages are available
+            self.clear_cache()
+            
+            logger.info(
+                "translation_package_installed_successfully",
+                source=source_lang,
+                target=target_lang,
+                total_packages=len(self.installed_languages)
+            )
+            
+            return True
+            
+        except PermissionError as e:
+            logger.error(
+                "permission_error_installing_package",
+                source=source_lang,
+                target=target_lang,
+                error=str(e),
+                exc_info=True
+            )
+            return False
+        except Exception as e:
+            logger.error(
+                "failed_to_install_translation_package",
+                source=source_lang,
+                target=target_lang,
+                error=str(e),
+                exc_info=True
+            )
+            return False
+    
     def clear_cache(self) -> None:
         """Clear translation cache."""
         self.translate.cache_clear()
