@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     audio_format: str = Field(default="PCM16", description="Audio format")
     
     # Model Paths
+    vosk_model_base_path: str = Field(
+        default="models/stt",
+        description="Base path for Vosk models"
+    )
     vosk_model_path_en: str = Field(
         default="models/stt/vosk-en",
         description="Path to English Vosk model"
@@ -49,6 +53,18 @@ class Settings(BaseSettings):
     vosk_model_path_hi: str = Field(
         default="models/stt/vosk-hi",
         description="Path to Hindi Vosk model"
+    )
+    vosk_model_path_te: str = Field(
+        default="models/stt/vosk-te",
+        description="Path to Telugu Vosk model"
+    )
+    vosk_model_path_gu: str = Field(
+        default="models/stt/vosk-gu",
+        description="Path to Gujarati Vosk model"
+    )
+    vosk_model_path_bn: str = Field(
+        default="models/stt/vosk-bn",
+        description="Path to Bengali (Indian English) Vosk model"
     )
     argos_model_path: str = Field(
         default="models/translate/argos-packages",
@@ -77,13 +93,24 @@ class Settings(BaseSettings):
     
     # Security
     enable_auth: bool = Field(default=False, description="Enable authentication")
-    jwt_secret: str = Field(
+    jwt_secret_key: str = Field(
         default="your-secret-key-change-in-production",
         description="JWT secret key"
     )
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expiration: int = Field(default=3600, description="JWT expiration in seconds")
+    api_keys: list[str] = Field(default_factory=list, description="Valid API keys")
+    
+    # Rate Limiting
     rate_limit_per_minute: int = Field(default=60, description="Rate limit per minute")
+    max_requests_per_minute: int = Field(default=100, description="Max requests per minute")
+    max_connections_per_ip: int = Field(default=10, description="Max connections per IP")
+    max_messages_per_second: int = Field(default=10, description="Max messages per second per connection")
+    
+    # Worker Pools
+    translation_workers: int = Field(default=4, description="Number of translation workers")
+    tts_workers: int = Field(default=2, description="Number of TTS workers")
+
     
     # Monitoring
     enable_metrics: bool = Field(default=True, description="Enable metrics collection")
@@ -119,21 +146,23 @@ class Settings(BaseSettings):
         """Get Vosk model path for a specific language.
         
         Args:
-            language: Language code (e.g., 'en', 'hi')
+            language: Language code (e.g., 'en', 'hi', 'te', 'gu', 'bn')
             
         Returns:
             Path to the Vosk model directory
+        
+        Note:
+            Available languages: English, Hindi, Telugu, Gujarati, Bengali (Indian English)
+            Other Indian languages (Tamil, Kannada, Malayalam, Marathi) not yet available in Vosk
         """
         model_mapping = {
             "en": self.vosk_model_path_en,
             "hi": self.vosk_model_path_hi,
+            "te": self.vosk_model_path_te,
+            "gu": self.vosk_model_path_gu,
+            "bn": self.vosk_model_path_bn,
         }
         return model_mapping.get(language.lower(), self.vosk_model_path_en)
-    
-    class Config:
-        """Pydantic configuration."""
-        env_file = ".env"
-        case_sensitive = False
 
 
 # Global settings instance
