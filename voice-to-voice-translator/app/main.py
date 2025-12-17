@@ -79,6 +79,117 @@ async def health_check():
     }
 
 
+@app.get("/stats")
+async def get_server_statistics():
+    """Get detailed server statistics and metrics."""
+    from app.server import get_connection_manager
+    from app.rooms import get_room_manager
+    
+    conn_mgr = get_connection_manager()
+    room_mgr = get_room_manager()
+    
+    # Get worker pool statistics - avoid importing if it causes errors
+    translation_stats = {"total": settings.translation_workers, "busy": 0, "queue_size": 0}
+    tts_stats = {"total": settings.tts_workers, "busy": 0, "queue_size": 0}
+    
+    try:
+        from app.workers import get_translation_pool, get_tts_pool
+        
+        translation_pool = get_translation_pool()
+        tts_pool = get_tts_pool()
+        
+        if hasattr(translation_pool, 'get_busy_count'):
+            translation_stats["busy"] = translation_pool.get_busy_count()
+        if hasattr(translation_pool, 'get_queue_size'):
+            translation_stats["queue_size"] = translation_pool.get_queue_size()
+            
+        if hasattr(tts_pool, 'get_busy_count'):
+            tts_stats["busy"] = tts_pool.get_busy_count()
+        if hasattr(tts_pool, 'get_queue_size'):
+            tts_stats["queue_size"] = tts_pool.get_queue_size()
+    except Exception as e:
+        logger.warning("worker_stats_unavailable", error=str(e))
+    
+    return {
+        "server": {
+            "version": "1.0.0",
+            "environment": settings.environment
+        },
+        "connections": {
+            "total": conn_mgr.get_connection_count(),
+            "active": conn_mgr.get_connection_count()
+        },
+        "rooms": {
+            "total": room_mgr.get_room_count(),
+            "active": room_mgr.get_room_count()
+        },
+        "workers": {
+            "translation": translation_stats,
+            "tts": tts_stats
+        }
+    }
+
+
+@app.get("/config")
+async def get_system_configuration():
+    """Get current system configuration."""
+    return {
+        "audio": {
+            "sample_rate": settings.audio_sample_rate,
+            "channels": settings.audio_channels,
+            "chunk_size": settings.audio_chunk_size,
+            "format": settings.audio_format
+        },
+        "limits": {
+            "max_connections": settings.max_connections,
+            "max_connections_per_ip": settings.max_connections_per_ip,
+            "max_users_per_room": settings.max_users_per_room,
+            "max_message_size": settings.max_message_size
+        },
+        "rate_limits": {
+            "messages_per_second": settings.max_messages_per_second,
+            "requests_per_minute": settings.max_requests_per_minute
+        },
+        "workers": {
+            "translation_workers": settings.translation_workers,
+            "tts_workers": settings.tts_workers
+        },
+        "features": {
+            "authentication_enabled": settings.enable_auth,
+            "rate_limiting_enabled": True,
+            "metrics_enabled": settings.enable_metrics
+        }
+    }
+
+
+@app.get("/languages/supported")
+async def get_supported_languages():
+    """Get list of supported languages for STT, Translation, and TTS based on downloaded models."""
+    from app.utils.model_scanner import ModelScanner
+    
+    scanner = ModelScanner()
+    
+    return {
+        "stt": scanner.get_available_stt_languages(),
+        "translation": scanner.get_available_translation_languages(),
+        "tts": scanner.get_available_tts_languages()
+    }
+
+
+@app.get("/languages/pairs")
+async def get_translation_pairs():
+    """Get available translation language pairs based on installed packages."""
+    from app.utils.model_scanner import ModelScanner
+    
+    scanner = ModelScanner()
+    pairs = scanner.get_translation_pairs()
+    
+    return {
+        "pairs": pairs,
+        "count": len(pairs)
+    }
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for client connections."""

@@ -86,3 +86,8 @@ class UnsupportedLanguageError(VoiceTranslatorException):
 class PipelineError(VoiceTranslatorException):
     """Processing pipeline errors."""
     pass
+
+
+class WorkerError(VoiceTranslatorException):
+    """Worker pool errors."""
+    pass
