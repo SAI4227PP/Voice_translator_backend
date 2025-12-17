@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: voice-translator
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - ../models:/app/models
+      - ../logs:/app/logs
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENVIRONMENT=production
+      - DEBUG=False
+      - AUDIO_SAMPLE_RATE=16000
+      - MAX_CONNECTIONS=100
+    restart: unless-stopped
+    networks:
+      - voice-translator-network
+
+  # Optional: Redis for scaling
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: voice-translator-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - voice-translator-network
+
+networks:
+  voice-translator-network:
+    driver: bridge
+
+# volumes:
+#   redis-data:
