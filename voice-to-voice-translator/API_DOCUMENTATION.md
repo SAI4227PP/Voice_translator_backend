@@ -3,6 +3,7 @@
 ## 📋 Table of Contents
 - [Overview](#overview)
 - [Base URL](#base-url)
+- [REST API Endpoints](#rest-api-endpoints)
 - [Authentication](#authentication)
 - [WebSocket Connection](#websocket-connection)
 - [Message Protocol](#message-protocol)
@@ -41,7 +42,796 @@ wss://your-domain.com/ws
 
 ---
 
-## 🔐 Authentication
+## � REST API Endpoints
+
+The API provides several REST endpoints for management and information retrieval.
+
+### Base URL for REST API
+
+**Development:** `http://localhost:8000`  
+**Production:** `https://your-domain.com`
+
+---
+
+### 1. Health Check
+
+Get server health status.
+
+**Endpoint:** `GET /health`
+
+**Authentication:** None required
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "uptime": 3600,
+  "connections": 15,
+  "rooms": 3,
+  "timestamp": "2025-12-17T10:30:00Z"
+}
+```
+
+**Status Codes:**
+- `200 OK` - Server is healthy
+- `503 Service Unavailable` - Server is unhealthy
+
+**cURL Example:**
+```bash
+curl http://localhost:8000/health
+```
+
+---
+
+### 2. Create Authentication Token
+
+Generate a JWT token for WebSocket authentication.
+
+**Endpoint:** `POST /auth/token`
+
+**Authentication:** API Key (optional)
+
+**Headers:**
+```
+Content-Type: application/json
+X-API-Key: your-api-key (optional)
+```
+
+**Request Body:**
+```json
+{
+  "user_id": "user123",
+  "name": "John Doe",
+  "metadata": {
+    "email": "john@example.com"
+  }
+}
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user_id` | string | Yes | Unique user identifier |
+| `name` | string | Yes | User display name |
+| `metadata` | object | No | Additional user metadata |
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 3600,
+  "user_id": "user123"
+}
+```
+
+**Status Codes:**
+- `200 OK` - Token created successfully
+- `400 Bad Request` - Invalid request body
+- `401 Unauthorized` - Invalid API key
+- `429 Too Many Requests` - Rate limit exceeded
+
+**cURL Example:**
+```bash
+curl -X POST http://localhost:8000/auth/token \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "user_id": "user123",
+    "name": "John Doe"
+  }'
+```
+
+---
+
+### 3. Verify Token
+
+Verify a JWT token's validity.
+
+**Endpoint:** `POST /auth/verify`
+
+**Authentication:** None required
+
+**Headers:**
+```
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Response:**
+```json
+{
+  "valid": true,
+  "user_id": "user123",
+  "expires_at": "2025-12-17T11:30:00Z"
+}
+```
+
+**Status Codes:**
+- `200 OK` - Token is valid
+- `401 Unauthorized` - Token is invalid or expired
+
+**cURL Example:**
+```bash
+curl -X POST http://localhost:8000/auth/verify \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }'
+```
+
+---
+
+### 4. Get Supported Languages
+
+Retrieve list of supported languages.
+
+**Endpoint:** `GET /languages`
+
+**Authentication:** None required
+
+**Response:**
+```json
+{
+  "languages": [
+    {
+      "code": "en",
+      "name": "English",
+      "stt_available": true,
+      "translation_available": true,
+      "tts_available": true
+    },
+    {
+      "code": "es",
+      "name": "Spanish",
+      "stt_available": true,
+      "translation_available": true,
+      "tts_available": true
+    },
+    {
+      "code": "fr",
+      "name": "French",
+      "stt_available": true,
+      "translation_available": true,
+      "tts_available": true
+    }
+  ],
+  "total": 9
+}
+```
+
+**Status Codes:**
+- `200 OK` - Languages retrieved successfully
+
+**cURL Example:**
+```bash
+curl http://localhost:8000/languages
+```
+
+---
+
+### 5. Get Available Translation Pairs
+
+Get list of available language translation pairs.
+
+**Endpoint:** `GET /languages/pairs`
+
+**Authentication:** None required
+
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `source` | string | No | Filter by source language |
+| `target` | string | No | Filter by target language |
+
+**Response:**
+```json
+{
+  "pairs": [
+    {
+      "source": "en",
+      "target": "es",
+      "available": true
+    },
+    {
+      "source": "en",
+      "target": "fr",
+      "available": true
+    },
+    {
+      "source": "es",
+      "target": "en",
+      "available": true
+    }
+  ],
+  "total": 72
+}
+```
+
+**Status Codes:**
+- `200 OK` - Pairs retrieved successfully
+
+**cURL Example:**
+```bash
+curl "http://localhost:8000/languages/pairs?source=en"
+```
+
+---
+
+### 6. Create Room
+
+Create a new translation room.
+
+**Endpoint:** `POST /rooms`
+
+**Authentication:** JWT Token or API Key
+
+**Headers:**
+```
+Content-Type: application/json
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "room_id": "meeting-room-123",
+  "name": "Team Meeting",
+  "max_users": 10,
+  "languages": ["en", "es", "fr"],
+  "settings": {
+    "auto_translate": true,
+    "record_session": false
+  }
+}
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `room_id` | string | No | Custom room ID (auto-generated if not provided) |
+| `name` | string | Yes | Room display name |
+| `max_users` | integer | No | Maximum users (default: 10) |
+| `languages` | array | No | Allowed languages (all if not specified) |
+| `settings` | object | No | Room configuration |
+
+**Response:**
+```json
+{
+  "room_id": "meeting-room-123",
+  "name": "Team Meeting",
+  "created_at": "2025-12-17T10:30:00Z",
+  "max_users": 10,
+  "current_users": 0,
+  "websocket_url": "ws://localhost:8000/ws"
+}
+```
+
+**Status Codes:**
+- `201 Created` - Room created successfully
+- `400 Bad Request` - Invalid request body
+- `401 Unauthorized` - Authentication required
+- `409 Conflict` - Room ID already exists
+
+**cURL Example:**
+```bash
+curl -X POST http://localhost:8000/rooms \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "name": "Team Meeting",
+    "max_users": 10,
+    "languages": ["en", "es"]
+  }'
+```
+
+---
+
+### 7. Get Room Information
+
+Get details about a specific room.
+
+**Endpoint:** `GET /rooms/{room_id}`
+
+**Authentication:** JWT Token or API Key
+
+**Path Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `room_id` | string | Yes | Room identifier |
+
+**Response:**
+```json
+{
+  "room_id": "meeting-room-123",
+  "name": "Team Meeting",
+  "created_at": "2025-12-17T10:30:00Z",
+  "max_users": 10,
+  "current_users": 3,
+  "users": [
+    {
+      "user_id": "user_abc123",
+      "name": "Alice",
+      "language": "en",
+      "connected_at": "2025-12-17T10:31:00Z"
+    },
+    {
+      "user_id": "user_def456",
+      "name": "Bob",
+      "language": "es",
+      "connected_at": "2025-12-17T10:32:00Z"
+    }
+  ],
+  "active": true
+}
+```
+
+**Status Codes:**
+- `200 OK` - Room found
+- `401 Unauthorized` - Authentication required
+- `404 Not Found` - Room does not exist
+
+**cURL Example:**
+```bash
+curl http://localhost:8000/rooms/meeting-room-123 \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 8. List All Rooms
+
+Get list of all active rooms.
+
+**Endpoint:** `GET /rooms`
+
+**Authentication:** JWT Token or API Key
+
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `page` | integer | No | Page number (default: 1) |
+| `limit` | integer | No | Items per page (default: 20, max: 100) |
+| `active` | boolean | No | Filter by active status |
+
+**Response:**
+```json
+{
+  "rooms": [
+    {
+      "room_id": "meeting-room-123",
+      "name": "Team Meeting",
+      "current_users": 3,
+      "max_users": 10,
+      "active": true,
+      "created_at": "2025-12-17T10:30:00Z"
+    },
+    {
+      "room_id": "conference-456",
+      "name": "Conference Call",
+      "current_users": 5,
+      "max_users": 20,
+      "active": true,
+      "created_at": "2025-12-17T09:15:00Z"
+    }
+  ],
+  "total": 15,
+  "page": 1,
+  "limit": 20,
+  "pages": 1
+}
+```
+
+**Status Codes:**
+- `200 OK` - Rooms retrieved successfully
+- `401 Unauthorized` - Authentication required
+
+**cURL Example:**
+```bash
+curl "http://localhost:8000/rooms?page=1&limit=20" \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 9. Delete Room
+
+Delete a room and disconnect all users.
+
+**Endpoint:** `DELETE /rooms/{room_id}`
+
+**Authentication:** JWT Token or API Key (Admin)
+
+**Path Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `room_id` | string | Yes | Room identifier |
+
+**Response:**
+```json
+{
+  "success": true,
+  "room_id": "meeting-room-123",
+  "message": "Room deleted successfully",
+  "disconnected_users": 3
+}
+```
+
+**Status Codes:**
+- `200 OK` - Room deleted successfully
+- `401 Unauthorized` - Authentication required
+- `403 Forbidden` - Insufficient permissions
+- `404 Not Found` - Room does not exist
+
+**cURL Example:**
+```bash
+curl -X DELETE http://localhost:8000/rooms/meeting-room-123 \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 10. Get Server Statistics
+
+Get server statistics and metrics.
+
+**Endpoint:** `GET /stats`
+
+**Authentication:** JWT Token or API Key
+
+**Response:**
+```json
+{
+  "server": {
+    "uptime": 86400,
+    "version": "1.0.0",
+    "environment": "production"
+  },
+  "connections": {
+    "total": 150,
+    "active": 142,
+    "idle": 8
+  },
+  "rooms": {
+    "total": 25,
+    "active": 20,
+    "empty": 5
+  },
+  "workers": {
+    "translation": {
+      "total": 4,
+      "busy": 2,
+      "queue_size": 5
+    },
+    "tts": {
+      "total": 2,
+      "busy": 1,
+      "queue_size": 3
+    }
+  },
+  "processing": {
+    "total_translations": 5420,
+    "total_audio_processed_mb": 2850,
+    "avg_latency_ms": 245
+  },
+  "timestamp": "2025-12-17T10:30:00Z"
+}
+```
+
+**Status Codes:**
+- `200 OK` - Statistics retrieved successfully
+- `401 Unauthorized` - Authentication required
+
+**cURL Example:**
+```bash
+curl http://localhost:8000/stats \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### 11. Text-Only Translation
+
+Translate text without audio processing.
+
+**Endpoint:** `POST /translate`
+
+**Authentication:** JWT Token or API Key
+
+**Headers:**
+```
+Content-Type: application/json
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "text": "Hello, how are you?",
+  "source_language": "en",
+  "target_language": "es"
+}
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `text` | string | Yes | Text to translate |
+| `source_language` | string | Yes | Source language code |
+| `target_language` | string | Yes | Target language code |
+
+**Response:**
+```json
+{
+  "original_text": "Hello, how are you?",
+  "translated_text": "Hola, ¿cómo estás?",
+  "source_language": "en",
+  "target_language": "es",
+  "processing_time_ms": 45
+}
+```
+
+**Status Codes:**
+- `200 OK` - Translation successful
+- `400 Bad Request` - Invalid request body
+- `401 Unauthorized` - Authentication required
+- `422 Unprocessable Entity` - Unsupported language pair
+
+**cURL Example:**
+```bash
+curl -X POST http://localhost:8000/translate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "text": "Hello, how are you?",
+    "source_language": "en",
+    "target_language": "es"
+  }'
+```
+
+---
+
+### 12. Batch Translation
+
+Translate multiple texts in one request.
+
+**Endpoint:** `POST /translate/batch`
+
+**Authentication:** JWT Token or API Key
+
+**Headers:**
+```
+Content-Type: application/json
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "texts": [
+    "Hello, how are you?",
+    "What time is it?",
+    "Thank you very much"
+  ],
+  "source_language": "en",
+  "target_language": "es"
+}
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `texts` | array | Yes | Array of texts to translate (max 100) |
+| `source_language` | string | Yes | Source language code |
+| `target_language` | string | Yes | Target language code |
+
+**Response:**
+```json
+{
+  "translations": [
+    {
+      "original": "Hello, how are you?",
+      "translated": "Hola, ¿cómo estás?",
+      "index": 0
+    },
+    {
+      "original": "What time is it?",
+      "translated": "¿Qué hora es?",
+      "index": 1
+    },
+    {
+      "original": "Thank you very much",
+      "translated": "Muchas gracias",
+      "index": 2
+    }
+  ],
+  "total": 3,
+  "source_language": "en",
+  "target_language": "es",
+  "processing_time_ms": 120
+}
+```
+
+**Status Codes:**
+- `200 OK` - Translations successful
+- `400 Bad Request` - Invalid request body or too many texts
+- `401 Unauthorized` - Authentication required
+- `422 Unprocessable Entity` - Unsupported language pair
+
+**cURL Example:**
+```bash
+curl -X POST http://localhost:8000/translate/batch \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "texts": ["Hello", "Goodbye", "Thank you"],
+    "source_language": "en",
+    "target_language": "es"
+  }'
+```
+
+---
+
+### 13. Download TTS Audio
+
+Generate and download TTS audio for text.
+
+**Endpoint:** `POST /tts/generate`
+
+**Authentication:** JWT Token or API Key
+
+**Headers:**
+```
+Content-Type: application/json
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "text": "Hello, this is a test message",
+  "language": "en",
+  "format": "wav"
+}
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `text` | string | Yes | Text to synthesize |
+| `language` | string | Yes | Language code |
+| `format` | string | No | Audio format: "wav", "mp3" (default: "wav") |
+
+**Response:**
+- Content-Type: `audio/wav` or `audio/mpeg`
+- Body: Binary audio data
+
+**Status Codes:**
+- `200 OK` - Audio generated successfully
+- `400 Bad Request` - Invalid request body
+- `401 Unauthorized` - Authentication required
+- `422 Unprocessable Entity` - Unsupported language
+
+**cURL Example:**
+```bash
+curl -X POST http://localhost:8000/tts/generate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "text": "Hello world",
+    "language": "en"
+  }' \
+  --output output.wav
+```
+
+---
+
+### 14. System Configuration
+
+Get current system configuration (Admin only).
+
+**Endpoint:** `GET /config`
+
+**Authentication:** JWT Token (Admin)
+
+**Response:**
+```json
+{
+  "audio": {
+    "sample_rate": 16000,
+    "channels": 1,
+    "chunk_size": 4096,
+    "format": "PCM16"
+  },
+  "limits": {
+    "max_connections": 100,
+    "max_connections_per_ip": 10,
+    "max_users_per_room": 10,
+    "max_message_size": 10485760
+  },
+  "rate_limits": {
+    "messages_per_second": 10,
+    "requests_per_minute": 100
+  },
+  "workers": {
+    "translation_workers": 4,
+    "tts_workers": 2
+  },
+  "features": {
+    "authentication_enabled": false,
+    "rate_limiting_enabled": true,
+    "metrics_enabled": true
+  }
+}
+```
+
+**Status Codes:**
+- `200 OK` - Configuration retrieved
+- `401 Unauthorized` - Authentication required
+- `403 Forbidden` - Admin access required
+
+**cURL Example:**
+```bash
+curl http://localhost:8000/config \
+  -H "Authorization: Bearer <admin-token>"
+```
+
+---
+
+### REST API Response Format
+
+All REST API responses follow this format:
+
+**Success Response:**
+```json
+{
+  // Response data
+}
+```
+
+**Error Response:**
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable error message",
+    "details": {
+      // Additional error details
+    }
+  }
+}
+```
+
+---
+
+## �🔐 Authentication
 
 ### Optional JWT Authentication
 
@@ -1066,6 +1856,14 @@ asyncio.run(main())
 | Language Code | Language Name |
 |---------------|---------------|
 | `en` | English |
+| `hi` | Hindi |
+| `te` | Telugu |
+| `ta` | Tamil |
+| `kn` | Kannada |
+| `ml` | Malayalam |
+| `gu` | Gujarati |
+| `mr` | Marathi |
+| `bn` | Bengali |
 | `es` | Spanish |
 | `fr` | French |
 | `de` | German |
@@ -1074,7 +1872,8 @@ asyncio.run(main())
 | `ru` | Russian |
 | `zh` | Chinese |
 | `ja` | Japanese |
-| `hi` | Hindi |
+
+**Primary Focus:** Indian languages (Hindi, Telugu, Tamil, Kannada, Malayalam, Gujarati, Marathi, Bengali)
 
 **Note:** Language support depends on installed models. Check available languages with the `/languages` endpoint.
 

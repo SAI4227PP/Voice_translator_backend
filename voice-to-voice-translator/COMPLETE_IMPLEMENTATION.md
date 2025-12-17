@@ -219,8 +219,11 @@ voice-to-voice-translator/
 
 ### AI/ML Models
 - **Vosk 0.3.45**: Offline speech recognition
+  - Supports 9 languages: English, Hindi, Telugu, Tamil, Kannada, Malayalam, Gujarati, Marathi, Bengali
 - **Argos Translate 1.9.1**: Offline translation
+  - All Indian language pairs with English
 - **Coqui TTS 0.21.1**: Neural text-to-speech
+  - Multi-language synthesis
 
 ### Audio Processing
 - **NumPy 1.24.3**: Audio array operations
@@ -323,7 +326,7 @@ voice-to-voice-translator/
 
 ### 4. TTS Pipeline
 - **Coqui TTS**: State-of-the-art neural TTS
-- **Multi-Language**: 9+ languages with default models
+- **Multi-Language**: 15+ languages including all Indian languages
 - **Async Synthesis**: Non-blocking audio generation
 - **Format Conversion**: Direct PCM16 output
 
