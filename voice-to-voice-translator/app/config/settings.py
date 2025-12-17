@@ -58,29 +58,13 @@ class Settings(BaseSettings):
         default="models/stt/vosk-te",
         description="Path to Telugu Vosk model"
     )
-    vosk_model_path_ta: str = Field(
-        default="models/stt/vosk-ta",
-        description="Path to Tamil Vosk model"
-    )
-    vosk_model_path_kn: str = Field(
-        default="models/stt/vosk-kn",
-        description="Path to Kannada Vosk model"
-    )
-    vosk_model_path_ml: str = Field(
-        default="models/stt/vosk-ml",
-        description="Path to Malayalam Vosk model"
-    )
     vosk_model_path_gu: str = Field(
         default="models/stt/vosk-gu",
         description="Path to Gujarati Vosk model"
     )
-    vosk_model_path_mr: str = Field(
-        default="models/stt/vosk-mr",
-        description="Path to Marathi Vosk model"
-    )
     vosk_model_path_bn: str = Field(
         default="models/stt/vosk-bn",
-        description="Path to Bengali Vosk model"
+        description="Path to Bengali (Indian English) Vosk model"
     )
     argos_model_path: str = Field(
         default="models/translate/argos-packages",
@@ -162,28 +146,23 @@ class Settings(BaseSettings):
         """Get Vosk model path for a specific language.
         
         Args:
-            language: Language code (e.g., 'en', 'hi', 'te', 'ta', etc.)
+            language: Language code (e.g., 'en', 'hi', 'te', 'gu', 'bn')
             
         Returns:
             Path to the Vosk model directory
+        
+        Note:
+            Available languages: English, Hindi, Telugu, Gujarati, Bengali (Indian English)
+            Other Indian languages (Tamil, Kannada, Malayalam, Marathi) not yet available in Vosk
         """
         model_mapping = {
             "en": self.vosk_model_path_en,
             "hi": self.vosk_model_path_hi,
             "te": self.vosk_model_path_te,
-            "ta": self.vosk_model_path_ta,
-            "kn": self.vosk_model_path_kn,
-            "ml": self.vosk_model_path_ml,
             "gu": self.vosk_model_path_gu,
-            "mr": self.vosk_model_path_mr,
             "bn": self.vosk_model_path_bn,
         }
         return model_mapping.get(language.lower(), self.vosk_model_path_en)
-    
-    class Config:
-        """Pydantic configuration."""
-        env_file = ".env"
-        case_sensitive = False
 
 
 # Global settings instance
