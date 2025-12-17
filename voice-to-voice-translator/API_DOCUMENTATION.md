@@ -232,7 +232,7 @@ Retrieve list of supported languages.
 
 **cURL Example:**
 ```bash
-curl http://localhost:8000/languages
+curl http://localhost:8000/languages/supported
 ```
 
 ---
