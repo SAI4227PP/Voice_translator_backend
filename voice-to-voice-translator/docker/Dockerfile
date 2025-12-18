@@ -55,9 +55,16 @@ RUN mkdir -p models/stt models/translate models/tts && \
 COPY scripts/download_models.py scripts/
 
 # Download all language models (this may take a while)
-# Set environment to non-interactive
+# Set environment to non-interactive and argos packages to persist in /app
 ENV DOWNLOAD_MODELS=1 \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    ARGOS_PACKAGES_DIR=/app/.argos_packages \
+    HOME=/tmp \
+    SPACY_HOME=/tmp \
+    XDG_CACHE_HOME=/tmp
+
+# Create argos packages directory
+RUN mkdir -p /app/.argos_packages
 
 # Download models - show errors but continue if they fail
 RUN echo "Starting model download..." && \
@@ -66,7 +73,9 @@ RUN echo "Starting model download..." && \
     echo "Checking downloaded models:" && \
     ls -la models/stt/ || true && \
     ls -la models/translate/ || true && \
-    ls -la models/tts/ || true || \
+    ls -la models/tts/ || true && \
+    echo "Checking Argos packages:" && \
+    ls -la /app/.argos_packages/ || true || \
     echo "Warning: Some models failed to download. They will be downloaded on first use."
 
 # Stage 4: Final production image
@@ -79,8 +88,9 @@ WORKDIR /app
 COPY --from=python-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=python-deps /usr/local/bin /usr/local/bin
 
-# Copy downloaded models from model-downloader stage
+# Copy downloaded models and Argos packages from model-downloader stage
 COPY --from=model-downloader /app/models /app/models
+COPY --from=model-downloader /app/.argos_packages /app/.argos_packages
 
 # Copy application code
 COPY app/ ./app/
@@ -120,14 +130,17 @@ ENV HOST=0.0.0.0 \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
     NUMBA_DISABLE_JIT=0 \
     HOME=/tmp \
+    SPACY_HOME=/tmp \
+    XDG_CACHE_HOME=/tmp \
     MPLCONFIGDIR=/tmp/matplotlib \
     FONTCONFIG_PATH=/tmp/fontconfig \
-    ARGOS_PACKAGES_DIR=/tmp/argostranslate
+    ARGOS_PACKAGES_DIR=/app/.argos_packages
 
-# Create cache directories with proper permissions
+# Create cache directories with proper permissions (including SpaCy's cache needs)
 USER root
-RUN mkdir -p /tmp/numba_cache /tmp/matplotlib /tmp/fontconfig /tmp/argostranslate && \
-    chmod -R 777 /tmp/numba_cache /tmp/matplotlib /tmp/fontconfig /tmp/argostranslate
+RUN mkdir -p /tmp/numba_cache /tmp/matplotlib /tmp/fontconfig /tmp/.cache /tmp/spacy && \
+    chmod -R 777 /tmp && \
+    chown -R appuser:appuser /app/.argos_packages
 USER appuser
 
 # Run application with uvicorn for production

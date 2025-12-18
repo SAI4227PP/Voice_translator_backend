@@ -113,10 +113,10 @@ class ModelScanner:
         logger.info("scanning_translation_packages")
         
         try:
-            # Set argostranslate to use writable directory
+            # Set argostranslate to use persisted directory
             import os
-            os.environ.setdefault('ARGOS_PACKAGES_DIR', '/tmp/argostranslate')
-            os.environ.setdefault('HOME', '/tmp')
+            os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
+            os.environ.setdefault('HOME', '/app')
             
             import argostranslate.package
             
@@ -204,10 +204,13 @@ class ModelScanner:
             }
         except Exception as e:
             logger.error("error_scanning_translation_models_using_defaults", error=str(e), exc_info=True)
-            # Return minimal defaults on any other error
+            # Return default languages including installed packages
             return {
                 "en": {"name": "English"},
+                "hi": {"name": "Hindi"},
+                "bn": {"name": "Bengali"},
                 "es": {"name": "Spanish"},
+                "fr": {"name": "French"},
             }
         
         logger.info("translation_scan_complete", languages_found=len(translation_langs))
@@ -323,10 +326,10 @@ class ModelScanner:
         logger.info("scanning_translation_pairs")
         
         try:
-            # Set argostranslate to use writable directory
+            # Set argostranslate to use persisted directory
             import os
-            os.environ.setdefault('ARGOS_PACKAGES_DIR', '/tmp/argostranslate')
-            os.environ.setdefault('HOME', '/tmp')
+            os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
+            os.environ.setdefault('HOME', '/app')
             
             import argostranslate.package
             
@@ -425,13 +428,19 @@ class ModelScanner:
                 {"from": "es", "to": "en", "name": "Spanish → English"},
                 {"from": "en", "to": "hi", "name": "English → Hindi"},
                 {"from": "hi", "to": "en", "name": "Hindi → English"},
+                {"from": "en", "to": "bn", "name": "English → Bengali"},
+                {"from": "bn", "to": "en", "name": "Bengali → English"},
             ]
         except Exception as e:
             logger.error("error_getting_translation_pairs_using_defaults", error=str(e), exc_info=True)
-            # Return minimal default pairs on any other error
+            # Return default pairs including installed packages
             return [
                 {"from": "en", "to": "es", "name": "English → Spanish"},
                 {"from": "es", "to": "en", "name": "Spanish → English"},
+                {"from": "en", "to": "hi", "name": "English → Hindi"},
+                {"from": "hi", "to": "en", "name": "Hindi → English"},
+                {"from": "en", "to": "bn", "name": "English → Bengali"},
+                {"from": "bn", "to": "en", "name": "Bengali → English"},
             ]
         
         logger.info("translation_pairs_scan_complete", pairs_found=len(pairs))

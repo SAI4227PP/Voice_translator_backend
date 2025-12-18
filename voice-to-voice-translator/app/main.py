@@ -16,9 +16,12 @@ os.environ.setdefault('NUMBA_DISABLE_JIT', '0')
 # Configure matplotlib and fontconfig to use writable directories
 os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib'
 os.environ['FONTCONFIG_PATH'] = '/tmp/fontconfig'
-os.environ.setdefault('HOME', '/tmp')
-# Configure argostranslate to use writable directory
-os.environ['ARGOS_PACKAGES_DIR'] = '/tmp/argostranslate'
+# Configure SpaCy cache directories (MUST be writable)
+os.environ['HOME'] = '/tmp'
+os.environ['SPACY_HOME'] = '/tmp'
+os.environ['XDG_CACHE_HOME'] = '/tmp'
+# Configure argostranslate to use persisted directory in /app
+os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
 
 from app.config import setup_logging, get_settings, logger
 from app.server import get_websocket_server

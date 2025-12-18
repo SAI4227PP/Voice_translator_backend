@@ -34,6 +34,13 @@ class ArgosEngine:
                 "Argos Translate not installed. Install with: pip install argostranslate"
             )
         
+        # Set environment variables for argos packages location
+        import os
+        os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
+        os.environ.setdefault('HOME', '/tmp')
+        os.environ.setdefault('SPACY_HOME', '/tmp')
+        os.environ.setdefault('XDG_CACHE_HOME', '/tmp')
+        
         # Update package index
         try:
             argostranslate.package.update_package_index()
@@ -236,8 +243,8 @@ class ArgosEngine:
         """
         try:
             import os
-            os.environ.setdefault('ARGOS_PACKAGES_DIR', '/tmp/argostranslate')
-            os.environ.setdefault('HOME', '/tmp')
+            os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
+            os.environ.setdefault('HOME', '/app')
             
             logger.info(
                 "installing_translation_package",
