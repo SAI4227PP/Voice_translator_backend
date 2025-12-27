@@ -25,7 +25,6 @@ MANIFEST
 
 # Virtual Environment
 venv/
-env/
 ENV/
 env.bak/
 venv.bak/
@@ -39,7 +38,6 @@ venv.bak/
 .DS_Store
 
 # Environment variables
-.env
 .env.local
 .env.*.local
 
