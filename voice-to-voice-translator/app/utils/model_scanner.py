@@ -242,7 +242,7 @@ class ModelScanner:
             available_models = manager.list_models()
             logger.info("tts_available_models", count=len(available_models))
             
-            # Language name mappings
+            # Language name mappings - includes English and all major Indian languages
             language_names = {
                 "en": "English",
                 "es": "Spanish",
@@ -259,7 +259,32 @@ class ModelScanner:
                 "zh": "Chinese",
                 "ja": "Japanese",
                 "ko": "Korean",
+                "hu": "Hungarian",
+                # Indian Languages
                 "hi": "Hindi",
+                "hin": "Hindi",
+                "bn": "Bengali",
+                "ben": "Bengali",
+                "te": "Telugu",
+                "tel": "Telugu",
+                "ta": "Tamil",
+                "tam": "Tamil",
+                "mr": "Marathi",
+                "mar": "Marathi",
+                "gu": "Gujarati",
+                "guj": "Gujarati",
+                "kn": "Kannada",
+                "kan": "Kannada",
+                "ml": "Malayalam",
+                "mal": "Malayalam",
+                "pa": "Punjabi",
+                "pan": "Punjabi",
+                "ur": "Urdu",
+                "urd": "Urdu",
+                "as": "Assamese",
+                "asm": "Assamese",
+                "or": "Odia",
+                "ory": "Odia",
             }
             
             # Extract language codes from model names

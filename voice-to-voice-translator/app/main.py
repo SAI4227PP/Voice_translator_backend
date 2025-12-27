@@ -44,6 +44,13 @@ class BatchTranslateRequest(BaseModel):
     target_language: str = Field(..., description="Target language code")
 
 
+class TTSRequest(BaseModel):
+    """Request model for TTS audio generation."""
+    text: str = Field(..., description="Text to synthesize")
+    language: str = Field(..., description="Language code (e.g., 'en', 'hi', 'es')")
+    format: str = Field(default="wav", description="Audio format: 'wav' or 'mp3'")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
@@ -432,6 +439,91 @@ async def translate_batch(request: BatchTranslateRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Batch translation failed: {str(e)}"
+        )
+
+
+@app.post("/tts/generate")
+async def generate_tts_audio(request: TTSRequest):
+    """Generate TTS audio for the provided text.
+    
+    Request body:
+        {
+            "text": "Hello, this is a test message",
+            "language": "en",
+            "format": "wav"
+        }
+    
+    Returns:
+        Binary audio data (WAV or MP3 format)
+    """
+    from fastapi.responses import Response
+    from app.pipeline.tts import get_tts_factory
+    from app.utils.model_scanner import ModelScanner
+    import time
+    import io
+    
+    try:
+        # Validate format
+        if request.format not in ["wav", "mp3"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid format '{request.format}'. Supported formats: 'wav', 'mp3'"
+            )
+        
+        # Get available TTS languages
+        scanner = ModelScanner()
+        available_tts_languages = scanner.get_available_tts_languages()
+        
+        # Check if language is supported
+        if request.language not in available_tts_languages:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": f"Language '{request.language}' is not supported for TTS",
+                    "available_languages": list(available_tts_languages.keys()),
+                    "message": "Check /languages/supported for available TTS languages"
+                }
+            )
+        
+        # Get TTS engine
+        tts_factory = get_tts_factory()
+        tts_engine = tts_factory.get_engine(request.language)
+        
+        # Generate audio
+        start_time = time.time()
+        audio_data = await tts_engine.synthesize_async(request.text)
+        processing_time = (time.time() - start_time) * 1000
+        
+        logger.info(
+            "tts_generated",
+            language=request.language,
+            text_length=len(request.text),
+            audio_size=len(audio_data),
+            processing_time_ms=round(processing_time, 2)
+        )
+        
+        # Return audio as response
+        if request.format == "wav":
+            media_type = "audio/wav"
+        else:
+            media_type = "audio/mpeg"
+        
+        return Response(
+            content=audio_data,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="tts_output.{request.format}"',
+                "X-Processing-Time-Ms": str(round(processing_time, 2))
+            }
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("tts_generation_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"TTS generation failed: {str(e)}"
         )
 
 

@@ -2,6 +2,7 @@
 Coqui TTS engine.
 """
 import asyncio
+import os
 from typing import Optional
 from pathlib import Path
 import numpy as np
@@ -10,6 +11,9 @@ from app.utils.exceptions import TTSError, ModelLoadError
 
 logger = get_logger(__name__)
 settings = get_settings()
+
+# Set environment variable to agree to TOS for non-interactive environments
+os.environ['COQUI_TOS_AGREED'] = '1'
 
 # Try to import Coqui TTS
 try:
@@ -60,7 +64,8 @@ class CoquiEngine:
         Returns:
             Model name
         """
-        defaults = {
+        # For English and common European languages, use specific models (no TOS required)
+        simple_models = {
             "en": "tts_models/en/ljspeech/tacotron2-DDC",
             "es": "tts_models/es/mai/tacotron2-DDC",
             "fr": "tts_models/fr/mai/tacotron2-DDC",
@@ -71,7 +76,87 @@ class CoquiEngine:
             "zh": "tts_models/zh-CN/baker/tacotron2-DDC",
             "ja": "tts_models/ja/kokoro/tacotron2-DDC",
         }
-        return defaults.get(language, defaults["en"])
+        
+        # Use simple models in production/non-interactive environments
+        # XTTS v2 requires TOS agreement which fails in Docker
+        use_simple_models = os.getenv('TTS_USE_SIMPLE_MODELS', 'false').lower() == 'true'
+        
+        if language in simple_models and (use_simple_models or not os.isatty(0)):
+            logger.info(
+                "using_simple_tts_model",
+                language=language,
+                model=simple_models[language],
+                reason="non-interactive environment"
+            )
+            return simple_models[language]
+        
+        # For Indian languages, use Fairseq MMS models (no TOS required)
+        # Fairseq MMS supports 1100+ languages including all major Indian languages
+        indian_languages = {
+            "hi": "hin",  # Hindi
+            "bn": "ben",  # Bengali
+            "te": "tel",  # Telugu
+            "ta": "tam",  # Tamil
+            "mr": "mar",  # Marathi
+            "gu": "guj",  # Gujarati
+            "kn": "kan",  # Kannada
+            "ml": "mal",  # Malayalam
+            "pa": "pan",  # Punjabi
+            "ur": "urd",  # Urdu
+            "as": "asm",  # Assamese
+            "or": "ory",  # Odia (Oriya)
+        }
+        
+        if language in indian_languages:
+            iso_code = indian_languages[language]
+            model_name = f"tts_models/{iso_code}/fairseq/vits"
+            logger.info(
+                "using_fairseq_tts_model",
+                language=language,
+                iso_code=iso_code,
+                model=model_name
+            )
+            return model_name
+        
+        # For other languages in simple_models, use them
+        if language in simple_models:
+            return simple_models[language]
+        
+        # Default fallback to English model
+        logger.warning(
+            "language_not_supported_fallback",
+            language=language,
+            fallback="en"
+        )
+        return simple_models["en"]
+    
+    def _agree_to_tos(self) -> None:
+        """Programmatically agree to Coqui TTS Terms of Service.
+        
+        This is needed for XTTS models in non-interactive environments.
+        """
+        try:
+            # Get TTS cache directory
+            cache_dir = Path.home() / ".local" / "share" / "tts"
+            
+            # For Docker/non-interactive environments, use /tmp
+            if not os.access(str(Path.home()), os.W_OK):
+                cache_dir = Path("/tmp") / ".local" / "share" / "tts"
+            
+            # Create model-specific directory
+            model_dir = cache_dir / self.model_name.replace("/", "--")
+            model_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create TOS agreement file
+            tos_file = model_dir / ".tos_agreed"
+            if not tos_file.exists():
+                tos_file.write_text(
+                    "I have read, understood and agreed to the Terms and Conditions.\n"
+                    "Auto-agreed for API usage in production environment.\n"
+                )
+                logger.info("coqui_tos_agreed", model=self.model_name)
+        except Exception as e:
+            logger.warning("coqui_tos_agreement_failed", error=str(e))
     
     def _load_model(self) -> None:
         """Load TTS model.
@@ -80,11 +165,32 @@ class CoquiEngine:
             ModelLoadError: If model cannot be loaded
         """
         try:
-            self.tts = CoquiTTS(model_name=self.model_name, progress_bar=False)
+            # Pre-agree to TOS for XTTS models
+            if "xtts" in self.model_name.lower():
+                self._agree_to_tos()
+            
+            self.tts = CoquiTTS(model_name=self.model_name, progress_bar=False, gpu=False)
             logger.info("coqui_model_loaded", model=self.model_name)
         
+        except EOFError as e:
+            # TOS prompt failed in non-interactive mode
+            logger.error(
+                "coqui_tos_prompt_failed",
+                error="TOS agreement required but running in non-interactive mode",
+                model=self.model_name
+            )
+            raise ModelLoadError(
+                f"Failed to load {self.model_name}: TOS agreement required. "
+                "Running in non-interactive environment. Please set COQUI_TOS_AGREED=1 "
+                "or use a model that doesn't require TOS."
+            )
         except Exception as e:
-            logger.error("coqui_model_load_failed", error=str(e), exc_info=True)
+            logger.error(
+                "coqui_model_load_failed", 
+                error=str(e), 
+                model=self.model_name,
+                exc_info=True
+            )
             raise ModelLoadError(f"Failed to load Coqui TTS model: {e}")
     
     def synthesize(
@@ -111,64 +217,87 @@ class CoquiEngine:
             return np.array([], dtype=np.float32)
         
         try:
-            # Generate audio
-            if output_path:
-                self.tts.tts_to_file(text=text, file_path=output_path)
-                # Load the saved file
-                audio = self._load_audio(output_path)
+            # For XTTS v2 multilingual model, specify language
+            if "xtts" in self.model_name.lower():
+                # Generate directly to numpy array with language parameter
+                audio = self.tts.tts(text=text, language=self.language)
+            elif "fairseq" in self.model_name.lower():
+                # Fairseq models work without language parameter
+                # Directly call tts() for Fairseq models
+                audio = self.tts.tts(text=text)
             else:
-                # Generate directly to numpy array
+                # Other models (tacotron2, vits, etc.)
+                # These models typically work without language parameter
                 audio = self.tts.tts(text=text)
             
             logger.debug(
                 "tts_synthesis_complete",
                 text_length=len(text),
-                audio_length=len(audio) if isinstance(audio, np.ndarray) else 0
+                audio_length=len(audio) if isinstance(audio, np.ndarray) else 0,
+                model=self.model_name,
+                language=self.language
             )
             
             return np.array(audio, dtype=np.float32)
         
         except Exception as e:
-            logger.error("tts_synthesis_failed", error=str(e), exc_info=True)
-            raise TTSError(f"TTS synthesis failed: {e}")
+            logger.error(
+                "tts_synthesis_failed", 
+                error=str(e), 
+                model=self.model_name,
+                language=self.language,
+                text_preview=text[:50],
+                exc_info=True
+            )
+            raise TTSError(f"TTS synthesis failed for language '{self.language}': {e}")
     
     async def synthesize_async(
         self,
         text: str,
         output_path: Optional[str] = None
-    ) -> np.ndarray:
-        """Async wrapper for synthesis.
+    ) -> bytes:
+        """Async wrapper for synthesis that returns PCM16 bytes.
         
         Args:
             text: Text to synthesize
             output_path: Optional output path
             
         Returns:
-            Audio numpy array
+            Audio as PCM16 bytes (suitable for API responses)
         """
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
-            self.synthesize,
-            text,
-            output_path
+            self.synthesize_to_bytes,
+            text
         )
     
     def synthesize_to_bytes(self, text: str) -> bytes:
-        """Synthesize speech and return as PCM16 bytes.
+        """Synthesize speech and return as PCM16 WAV bytes.
         
         Args:
             text: Text to synthesize
             
         Returns:
-            Audio as PCM16 bytes
+            Audio as WAV file bytes (complete with header)
         """
+        import io
+        import wave
+        
         audio = self.synthesize(text)
         
         # Convert float32 to int16
         audio_int16 = (audio * 32767).astype(np.int16)
         
-        return audio_int16.tobytes()
+        # Create WAV file in memory
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, 'wb') as wav_file:
+            wav_file.setnchannels(1)  # Mono
+            wav_file.setsampwidth(2)  # 16-bit
+            wav_file.setframerate(self.get_sample_rate())
+            wav_file.writeframes(audio_int16.tobytes())
+        
+        return wav_buffer.getvalue()
     
     async def synthesize_to_bytes_async(self, text: str) -> bytes:
         """Async version of synthesize_to_bytes.

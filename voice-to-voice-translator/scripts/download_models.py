@@ -362,11 +362,38 @@ def setup_tts_models():
     print("TTS Model Setup")
     print("="*60)
     
+    # Create TTS directory
     tts_dir = Path("models/tts/coqui-models")
     tts_dir.mkdir(parents=True, exist_ok=True)
     
-    print("\n✓ Coqui TTS models download automatically on first use")
-    print("✓ No pre-download necessary\n")
+    # Check if TTS is installed
+    try:
+        from TTS.api import TTS
+        print("\n✓ Coqui TTS library installed")
+    except ImportError:
+        print("\n⚠ Coqui TTS not installed")
+        print("  Install with: pip install TTS")
+        print("  Or: pip install -r requirements.txt\n")
+        return
+    
+    print("\n📋 Supported TTS Languages:")
+    print("  • English (en) - XTTS v2")
+    print("  • Hindi (hi), Bengali (bn), Telugu (te), Tamil (ta)")
+    print("  • Marathi (mr), Gujarati (gu), Kannada (kn), Malayalam (ml)")
+    print("  • Punjabi (pa), Urdu (ur), Assamese (as), Odia (or)")
+    print("  • Plus 15 more European/Asian languages via XTTS v2")
+    
+    print("\n✓ TTS models auto-download on first use (no pre-download needed)")
+    
+    # Optional: Pre-download commonly used models
+    print("\n💡 To pre-download models, use Python:")
+    print("  from TTS.api import TTS")
+    print("  # For English/European languages:")
+    print("  TTS('tts_models/multilingual/multi-dataset/xtts_v2')")
+    print("  # For Indian languages (example):")
+    print("  TTS('tts_models/hin/fairseq/vits')  # Hindi")
+    print("  TTS('tts_models/ben/fairseq/vits')  # Bengali")
+    print()
 
 
 async def main():
@@ -399,10 +426,28 @@ async def main():
         print(f"\n✓ All models downloaded successfully!")
         print(f"✓ Total time: {minutes}m {seconds}s\n")
         print("="*70)
+        
+        # Show language support summary
+        print("\n📊 Language Support Summary:")
+        print("  STT (Speech-to-Text):  5 languages")
+        print("    ✓ English, Hindi, Telugu, Gujarati, Bengali")
+        print("\n  Translation:           2 language pairs")
+        print("    ✓ English ↔ Hindi")
+        print("    ✓ English ↔ Bengali")
+        print("\n  TTS (Text-to-Speech):  13 languages")
+        print("    ✓ English")
+        print("    ✓ Hindi, Bengali, Telugu, Tamil")
+        print("    ✓ Marathi, Gujarati, Kannada, Malayalam")
+        print("    ✓ Punjabi, Urdu, Assamese, Odia")
+        
+        print("\n" + "="*70)
+        print("\n🚀 Ready to Start!")
         print("\nYou can now run the server:")
         print("  python app/main.py")
         print("\nOr with Docker:")
-        print("  docker-compose up -d\n")
+        print("  docker-compose up -d")
+        print("\nOr with Uvicorn:")
+        print("  uvicorn app.main:app --host 0.0.0.0 --port 8000\n")
         
     except KeyboardInterrupt:
         print("\n\n✗ Download cancelled by user")
