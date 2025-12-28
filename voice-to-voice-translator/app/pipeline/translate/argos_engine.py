@@ -53,6 +53,8 @@ class ArgosEngine:
         except Exception as e:
             logger.error("argos_init_failed", error=str(e), exc_info=True)
             raise ModelLoadError(f"Failed to initialize Argos: {e}")
+        
+        self._warmed_up = False
     
     @lru_cache(maxsize=1000)
     def translate(
@@ -339,3 +341,64 @@ class ArgosEngine:
         """Clear translation cache."""
         self.translate.cache_clear()
         logger.info("translation_cache_cleared")
+
+    def warm_up(self) -> None:
+        """Warm up translation models by running a dummy translation for each installed language pair."""
+        if self._warmed_up:
+            logger.info("argos_warmup_skipped", reason="already warmed up")
+            return
+        import time
+        start = time.time()
+        try:
+            for package in self.installed_languages:
+                # Run a dummy translation to load the model into memory
+                argostranslate.translate.translate(
+                    "hello",
+                    package.from_code,
+                    package.to_code
+                )
+            self._warmed_up = True
+            logger.info(
+                "argos_models_warmed_up",
+                total_packages=len(self.installed_languages),
+                warmup_time=round(time.time() - start, 2)
+            )
+        except Exception as e:
+            logger.warning(
+                "argos_warmup_failed",
+                error=str(e),
+                exc_info=True
+            )
+
+    def warm_up_common_pairs(self, pairs: list[tuple[str, str]]) -> None:
+        """Warm up only common language pairs, skipping unavailable pairs."""
+        if self._warmed_up:
+            logger.info("argos_common_warmup_skipped", reason="already warmed up")
+            return
+        import time
+        start = time.time()
+        try:
+            warmed = 0
+            for src, tgt in pairs:
+                if not self.is_language_pair_available(src, tgt):
+                    logger.warning(
+                        "warmup_pair_not_installed",
+                        source=src,
+                        target=tgt
+                    )
+                    continue
+                argostranslate.translate.translate("hello", src, tgt)
+                warmed += 1
+            self._warmed_up = True
+            logger.info(
+                "argos_common_models_warmed_up",
+                warmed_pairs=warmed,
+                total_requested=len(pairs),
+                warmup_time=round(time.time() - start, 2)
+            )
+        except Exception as e:
+            logger.warning(
+                "argos_common_warmup_failed",
+                error=str(e),
+                exc_info=True
+            )

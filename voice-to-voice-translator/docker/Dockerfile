@@ -48,7 +48,9 @@ COPY requirements.txt .
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip setuptools wheel && \
-    pip install -r requirements.txt
+    pip install -r requirements.txt && \
+    python -m spacy download xx_sent_ud_sm
+
 
 # -------------------------------
 # Stage 3: Production runtime
