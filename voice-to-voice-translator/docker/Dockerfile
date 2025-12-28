@@ -81,7 +81,7 @@ ENV HOST=0.0.0.0 \
     ARGOS_PACKAGES_DIR=/app/models/argos \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
     XDG_CACHE_HOME=/tmp \
-    HOME=/tmp \
+    HOME=/app \
     SPACY_NO_DOWNLOADS=1
 
 USER appuser

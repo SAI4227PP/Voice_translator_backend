@@ -21,9 +21,18 @@ os.environ['HOME'] = '/tmp'
 # Configure argostranslate to use persisted directory in /app
 os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
 
-import spacy.util
-if not spacy.util.is_package("xx_sent_ud_sm"):
-    raise RuntimeError("spaCy model xx_sent_ud_sm missing from image")
+
+# Check for spaCy model at startup and provide clear error if missing
+try:
+    import spacy
+    spacy.load("xx_sent_ud_sm")
+except (OSError, ImportError) as e:
+    raise RuntimeError(
+        "spaCy model 'xx_sent_ud_sm' is missing from the image.\n"
+        "Please rebuild your Docker image to include the model.\n"
+        "See Dockerfile for installation instructions.\n"
+        f"Original error: {e}"
+    )
 
 from app.config import setup_logging, get_settings, logger
 from app.server import get_websocket_server
