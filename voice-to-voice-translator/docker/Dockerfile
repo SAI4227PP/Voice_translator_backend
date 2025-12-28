@@ -16,7 +16,9 @@ ENV PYTHONUNBUFFERED=1 \
     COQUI_TOS_AGREED=1 \
     TTS_USE_SIMPLE_MODELS=true
 
+# -------------------------------
 # System dependencies
+# -------------------------------
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -67,7 +69,9 @@ RUN mkdir -p logs data models /tmp && \
     useradd -r -g appuser -u 1000 appuser && \
     chown -R appuser:appuser /app /tmp
 
-# Runtime environment (IMPORTANT: no SPACY_HOME)
+# -------------------------------
+# Runtime environment
+# -------------------------------
 ENV HOST=0.0.0.0 \
     PORT=7860 \
     WORKERS=1 \
@@ -77,7 +81,8 @@ ENV HOST=0.0.0.0 \
     ARGOS_PACKAGES_DIR=/app/models/argos \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
     XDG_CACHE_HOME=/tmp \
-    HOME=/tmp
+    HOME=/tmp \
+    SPACY_NO_DOWNLOADS=1
 
 USER appuser
 
