@@ -18,10 +18,12 @@ os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib'
 os.environ['FONTCONFIG_PATH'] = '/tmp/fontconfig'
 # Configure SpaCy cache directories (MUST be writable)
 os.environ['HOME'] = '/tmp'
-os.environ['SPACY_HOME'] = '/tmp'
-os.environ['XDG_CACHE_HOME'] = '/tmp'
 # Configure argostranslate to use persisted directory in /app
 os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
+
+import spacy.util
+if not spacy.util.is_package("xx_sent_ud_sm"):
+    raise RuntimeError("spaCy model xx_sent_ud_sm missing from image")
 
 from app.config import setup_logging, get_settings, logger
 from app.server import get_websocket_server
