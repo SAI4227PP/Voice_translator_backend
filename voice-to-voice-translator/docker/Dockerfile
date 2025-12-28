@@ -52,18 +52,22 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 FROM base AS production
 WORKDIR /app
 
+# Copy Python deps + spaCy model
 COPY --from=python-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=python-deps /usr/local/bin /usr/local/bin
 
+# Copy app code
 COPY docs/ ./docs/
 COPY scripts/ ./scripts/
 COPY app/ ./app/
 
-RUN mkdir -p logs data models /tmp/spacy && \
+# Runtime user & dirs
+RUN mkdir -p logs data models /tmp && \
     groupadd -r appuser && \
     useradd -r -g appuser -u 1000 appuser && \
-    chown -R appuser:appuser /app /usr/local/lib/python3.11/site-packages /tmp
+    chown -R appuser:appuser /app /tmp
 
+# Runtime environment (IMPORTANT: no SPACY_HOME)
 ENV HOST=0.0.0.0 \
     PORT=7860 \
     WORKERS=1 \
@@ -72,8 +76,6 @@ ENV HOST=0.0.0.0 \
     DEBUG=False \
     ARGOS_PACKAGES_DIR=/app/models/argos \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
-    SPACY_NO_DOWNLOADS=1 \
-    SPACY_HOME=/tmp/spacy \
     XDG_CACHE_HOME=/tmp \
     HOME=/tmp
 
