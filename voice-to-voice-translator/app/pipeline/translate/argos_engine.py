@@ -33,19 +33,18 @@ class ArgosEngine:
             raise ModelLoadError(
                 "Argos Translate not installed. Install with: pip install argostranslate"
             )
-        
-        # Set environment variables for argos packages location
-        import os
-        os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
-        os.environ.setdefault('HOME', '/tmp')
-        os.environ.setdefault('SPACY_HOME', '/tmp')
-        os.environ.setdefault('XDG_CACHE_HOME', '/tmp')
-        
-        # Update package index
+
+        # Force spaCy to use the preinstalled model (one-time check)
+        import spacy
         try:
-            argostranslate.package.update_package_index()
+            spacy.load("xx_sent_ud_sm")
+            logger.info("spacy_xx_model_loaded")
+        except OSError as e:
+            logger.error("spacy_xx_model_missing", error=str(e))
+        
+        # Only get installed packages, do not update package index
+        try:
             self.installed_languages = argostranslate.package.get_installed_packages()
-            
             logger.info(
                 "argos_engine_initialized",
                 installed_packages=len(self.installed_languages)
@@ -56,7 +55,7 @@ class ArgosEngine:
         
         self._warmed_up = False
     
-    @lru_cache(maxsize=1000)
+    @lru_cache(maxsize=256)
     def translate(
         self,
         text: str,
@@ -243,18 +242,23 @@ class ArgosEngine:
         Returns:
             True if installation successful
         """
+        # Add guard to prevent repeated install attempts
+        if self.is_language_pair_available(source_lang, target_lang):
+            logger.info(
+                "install_language_pair_skipped",
+                source=source_lang,
+                target=target_lang,
+                reason="already installed"
+            )
+            return True
         try:
-            import os
-            os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
-            os.environ.setdefault('HOME', '/app')
-            
             logger.info(
                 "installing_translation_package",
                 source=source_lang,
                 target=target_lang
             )
             
-            # Update package index
+            # Update package index only here
             argostranslate.package.update_package_index()
             
             # Get available packages
