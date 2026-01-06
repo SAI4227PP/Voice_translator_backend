@@ -9,8 +9,10 @@ services:
       - voice-models:/app/models
     environment:
       - ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages
+      - PYTHONUNBUFFERED=1
     container_name: voice-translator-downloader
     restart: "no"
+    command: python scripts/download_models.py
 
   voice-translator:
     build:

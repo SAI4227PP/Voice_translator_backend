@@ -3,9 +3,16 @@ FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages
 
 WORKDIR /app
+
+# Install system dependencies for unzipping
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    unzip \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install only packages needed for downloading
 RUN pip install --no-cache-dir aiohttp tqdm argostranslate
@@ -13,7 +20,7 @@ RUN pip install --no-cache-dir aiohttp tqdm argostranslate
 # Copy download script
 COPY scripts/download_models.py scripts/download_models.py
 
-# Create models directory
-RUN mkdir -p models
+# Create models directory structure
+RUN mkdir -p models/stt models/translate/argos-packages models/tts/coqui-models
 
 # Script will be run via docker-compose command
