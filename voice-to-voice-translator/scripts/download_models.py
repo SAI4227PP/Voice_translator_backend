@@ -280,6 +280,12 @@ async def install_argos_packages():
     print("Installing Argos Translate Packages")
     print("="*60)
     
+    # Set ARGOS_PACKAGES_DIR to use volume-mounted directory
+    argos_dir = Path("models/translate/argos-packages")
+    argos_dir.mkdir(parents=True, exist_ok=True)
+    os.environ['ARGOS_PACKAGES_DIR'] = str(argos_dir.absolute())
+    print(f"\n✓ Using package directory: {argos_dir.absolute()}")
+    
     try:
         import argostranslate.package
         
@@ -293,14 +299,14 @@ async def install_argos_packages():
         # Get available packages
         available_packages = argostranslate.package.get_available_packages()
         
-        # Define language pairs to install - English as bridge
+        # Define language pairs to install - Only available packages
         # NOTE: Argos Translate only has Hindi and Bengali packages available
         # Other Indian languages (Telugu, Tamil, Kannada, Malayalam, Gujarati, Marathi) 
         # don't have translation packages in Argos repository yet
         language_pairs = [
             ("en", "hi", "English", "Hindi"),
-            ("en", "bn", "English", "Bengali"),
             ("hi", "en", "Hindi", "English"),
+            ("en", "bn", "English", "Bengali"),
             ("bn", "en", "Bengali", "English"),
         ]
         
@@ -431,10 +437,11 @@ async def main():
         print("\n📊 Language Support Summary:")
         print("  STT (Speech-to-Text):  5 languages")
         print("    ✓ English, Hindi, Telugu, Gujarati, Bengali")
-        print("\n  Translation:           2 language pairs")
+        print("\n  Translation:           2 bidirectional pairs (4 directions)")
         print("    ✓ English ↔ Hindi")
         print("    ✓ English ↔ Bengali")
-        print("\n  TTS (Text-to-Speech):  13 languages")
+        print("    ℹ Other pairs: Use English as bridge (e.g., Hindi→English→Bengali)")
+        print("\n  TTS (Text-to-Speech):  13 Indian languages (+ 15 more via XTTS)")
         print("    ✓ English")
         print("    ✓ Hindi, Bengali, Telugu, Tamil")
         print("    ✓ Marathi, Gujarati, Kannada, Malayalam")

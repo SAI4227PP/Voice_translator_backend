@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     
     # TTS Warm Start Configuration
     tts_preload_languages: str = Field(
-        default="en,hi,es,fr",
+        default="en,hi,bn,ta",
         description="Comma-separated list of languages to preload TTS models for warm start"
     )
     tts_enable_warm_start: bool = Field(
@@ -141,7 +141,7 @@ class Settings(BaseSettings):
         description="Translation warm start mode: 'all' (all installed packages) or 'common' (common pairs only)"
     )
     translation_common_pairs: str = Field(
-        default="en-hi,hi-en,en-es,es-en,en-fr,fr-en",
+        default="en-hi,hi-en,en-bn,bn-en",
         description="Comma-separated list of common translation pairs (format: src-tgt)"
     )
 

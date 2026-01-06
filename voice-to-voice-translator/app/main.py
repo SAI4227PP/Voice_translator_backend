@@ -100,14 +100,11 @@ async def initialize_stt_models():
         try:
             logger.info(f"stt_preloading_model", language=language)
             
-            # Get model path for language
-            model_path = settings.get_vosk_model_path(language)
-            
             # Create and cache the STT engine - this loads the model
+            # STTFactory.create() gets model_path from settings internally
             engine = STTFactory.create(
                 engine_type=settings.stt_engine,
-                language=language,
-                model_path=model_path
+                language=language
             )
             
             # Create a test recognizer to fully warm up the model

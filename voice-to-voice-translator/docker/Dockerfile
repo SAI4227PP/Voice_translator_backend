@@ -67,10 +67,11 @@ COPY scripts/ ./scripts/
 COPY app/ ./app/
 
 # Runtime user & dirs
-RUN mkdir -p logs data models /tmp && \
+RUN mkdir -p logs data models /tmp /app/.local && \
     groupadd -r appuser && \
     useradd -r -g appuser -u 1000 appuser && \
-    chown -R appuser:appuser /app /tmp
+    chown -R appuser:appuser /app /tmp && \
+    chmod -R 755 /usr/local/lib/python3.11/site-packages
 
 # -------------------------------
 # Runtime environment
@@ -85,7 +86,9 @@ ENV HOST=0.0.0.0 \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
     XDG_CACHE_HOME=/tmp \
     HOME=/app \
-    SPACY_NO_DOWNLOADS=1
+    SPACY_NO_DOWNLOADS=1 \
+    PIP_NO_INPUT=1 \
+    PIP_USER=0
 
 USER appuser
 
