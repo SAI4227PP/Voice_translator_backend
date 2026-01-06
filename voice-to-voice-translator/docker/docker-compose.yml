@@ -1,7 +1,6 @@
-version: '3.8'
+﻿version: "3.8"
 
 services:
-  # One-time model downloader (run once with: docker-compose --profile setup up model-downloader)
   model-downloader:
     build:
       context: ..
@@ -10,14 +9,14 @@ services:
       - voice-models:/app/models
     environment:
       - ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages
-    profiles:
-      - setup
+    container_name: voice-translator-downloader
+    restart: "no"
 
-  # Main application
   voice-translator:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    container_name: voice-translator-app
     ports:
       - "7860:7860"
     volumes:
@@ -43,56 +42,6 @@ services:
       - TTS_ENABLE_WARM_START=True
       - TTS_PRELOAD_LANGUAGES=en,hi,bn,ta
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-volumes:
-  voice-models:
-    name: voice-models
-
-services:
-  # Model downloader - runs once to populate models volume
-  model-downloader:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.downloader
-    volumes:
-      - voice-models:/app/models
-    environment:
-      - ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages
-    container_name: voice-translator-downloader
-    restart: "no"  # Run once and exit
-    
-  # Main application server
-  voice-translator:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    container_name: voice-translator-app
-    ports:
-      - "7860:7860"
-    volumes:
-      - voice-models:/app/models
-      - voice-logs:/app/logs
-    environment:
-      - HOST=0.0.0.0
-      - PORT=7860
-      - WORKERS=1
-      - LOG_LEVEL=INFO
-      - ENVIRONMENT=production
-      - DEBUG=False
-      - ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages
-      - NUMBA_CACHE_DIR=/tmp/numba_cache
-      - XDG_CACHE_HOME=/tmp
-      - HOME=/app
-      - SPACY_NO_DOWNLOADS=1
-      - PIP_NO_INPUT=1
-      - PIP_USER=0
-    restart: unless-stopped
     depends_on:
       model-downloader:
         condition: service_completed_successfully
@@ -105,6 +54,4 @@ services:
 
 volumes:
   voice-models:
-    driver: local
-  voice-logs:
-    driver: local
+    name: voice-models
