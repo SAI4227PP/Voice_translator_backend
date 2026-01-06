@@ -63,7 +63,8 @@ class TTSFactory:
         """
         return cls.create(settings.tts_engine, language)
     
-    @classmethod    def preload_engines(cls, languages: list[str]) -> dict[str, bool]:
+    @classmethod
+    def preload_engines(cls, languages: list[str]) -> dict[str, bool]:
         """Preload TTS engines for multiple languages (warm start).
         
         This method loads TTS models at startup to avoid cold start delays
@@ -82,12 +83,27 @@ class TTSFactory:
                 # Create engine (will be cached automatically)
                 engine = cls.create(settings.tts_engine, language)
                 results[language] = True
-                logger.info(\"tts_engine_preloaded\", language=language)
+                logger.info("tts_engine_preloaded", language=language)
             except Exception as e:
                 results[language] = False
-                logger.error(\n                    \"tts_engine_preload_failed\",\n                    language=language,\n                    error=str(e),\n                    exc_info=True\n                )\n        \n        logger.info(\n            \"tts_preload_complete\",\n            total=len(languages),\n            success=sum(results.values()),\n            failed=len(languages) - sum(results.values())\n        )\n        \n        return results
+                logger.error(
+                    "tts_engine_preload_failed",
+                    language=language,
+                    error=str(e),
+                    exc_info=True
+                )
+        
+        logger.info(
+            "tts_preload_complete",
+            total=len(languages),
+            success=sum(results.values()),
+            failed=len(languages) - sum(results.values())
+        )
+        
+        return results
     
-    @classmethod    def clear_cache(cls) -> None:
+    @classmethod
+    def clear_cache(cls) -> None:
         """Clear cached engines."""
         cls._engines.clear()
         logger.info("tts_engine_cache_cleared")
