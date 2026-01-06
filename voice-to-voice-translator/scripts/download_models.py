@@ -416,6 +416,34 @@ def setup_tts_models():
     print()
 
 
+def check_existing_models() -> Tuple[bool, List[str]]:
+    """Check if models already exist.
+    
+    Returns:
+        Tuple of (all_exist, missing_models)
+    """
+    missing = []
+    
+    # Check Vosk models
+    models_dir = Path("models/stt")
+    required_vosk = ["vosk-en", "vosk-hi", "vosk-te", "vosk-gu", "vosk-bn"]
+    for lang in required_vosk:
+        if not (models_dir / lang).exists():
+            missing.append(f"Vosk {lang}")
+    
+    # Check Argos packages
+    argos_dir = Path("models/translate/argos-packages")
+    if not argos_dir.exists() or len(list(argos_dir.glob("*.argosmodel"))) < 4:
+        missing.append("Argos translation packages")
+    
+    # Check TTS directory (just needs to exist)
+    tts_dir = Path("models/tts/coqui-models")
+    if not tts_dir.exists():
+        missing.append("TTS directory")
+    
+    return len(missing) == 0, missing
+
+
 async def main():
     """Main async function."""
     print("\n" + "="*70)
@@ -425,6 +453,25 @@ async def main():
     
     # Create models directory
     Path("models").mkdir(exist_ok=True)
+    
+    # Check if models already exist
+    all_exist, missing = check_existing_models()
+    if all_exist:
+        print("\n✓ All models already downloaded!")
+        print("✓ Skipping download to save time and bandwidth")
+        print("\n" + "="*70)
+        print("\n🚀 Models are ready!")
+        print("\nYou can now run the server:")
+        print("  python app/main.py")
+        print("\nOr with Docker:")
+        print("  docker-compose up -d")
+        print()
+        return
+    
+    print(f"\n📦 Missing models detected: {len(missing)}")
+    for model in missing:
+        print(f"  • {model}")
+    print()
     
     start_time = time.time()
     
