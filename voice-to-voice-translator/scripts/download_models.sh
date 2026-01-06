@@ -38,12 +38,18 @@ echo "🚀 Running model downloader in Docker container..."
 echo "   Volume: $MODELS_DIR:/app/models"
 echo ""
 
-# Run download script in container
+# Run download script in container as root (needed to create directories)
 docker run --rm \
+    --user root \
     -v "$MODELS_DIR:/app/models" \
     -e ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages \
     "$IMAGE_NAME" \
     python scripts/download_models.py
+
+# Fix ownership of downloaded models
+echo ""
+echo "🔧 Fixing file permissions..."
+sudo chown -R $(id -u):$(id -g) "$MODELS_DIR"
 
 echo ""
 echo "============================================================"
