@@ -15,11 +15,25 @@ try:
     import aiohttp
     from tqdm import tqdm
 except ImportError:
-    print("Installing required packages...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "aiohttp", "tqdm"])
-    import aiohttp
-    from tqdm import tqdm
+    print("\n" + "="*70)
+    print("Missing Required Packages")
+    print("="*70)
+    print("\nThis script requires: aiohttp, tqdm")
+    print("\nPlease install them first:")
+    print("\n  Option 1 - Install pip:")
+    print("    sudo apt update")
+    print("    sudo apt install python3-pip")
+    print("\n  Option 2 - Install via apt (Ubuntu/Debian):")
+    print("    sudo apt install python3-aiohttp python3-tqdm")
+    print("\n  Option 3 - Install via pip:")
+    print("    pip3 install aiohttp tqdm")
+    print("\n  Option 4 - Use virtual environment:")
+    print("    python3 -m venv venv")
+    print("    source venv/bin/activate")
+    print("    pip install aiohttp tqdm")
+    print("    python scripts/download_models.py")
+    print("\n" + "="*70)
+    sys.exit(1)
 
 
 class ParallelDownloader:
