@@ -113,10 +113,11 @@ class ModelScanner:
         logger.info("scanning_translation_packages")
         
         try:
-            # Set argostranslate to use persisted directory
+            # Use ARGOS_PACKAGES_DIR from environment (set by Dockerfile or .env)
+            # Ensure HOME is set for argostranslate
             import os
-            os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
-            os.environ.setdefault('HOME', '/app')
+            if 'HOME' not in os.environ or os.environ['HOME'] == '/tmp':
+                os.environ['HOME'] = '/app'
             
             import argostranslate.package
             
@@ -351,10 +352,10 @@ class ModelScanner:
         logger.info("scanning_translation_pairs")
         
         try:
-            # Set argostranslate to use persisted directory
+            # Use ARGOS_PACKAGES_DIR from environment
             import os
-            os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
-            os.environ.setdefault('HOME', '/app')
+            if 'HOME' not in os.environ or os.environ['HOME'] == '/tmp':
+                os.environ['HOME'] = '/app'
             
             import argostranslate.package
             

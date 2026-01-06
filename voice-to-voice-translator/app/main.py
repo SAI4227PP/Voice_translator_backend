@@ -18,26 +18,249 @@ os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib'
 os.environ['FONTCONFIG_PATH'] = '/tmp/fontconfig'
 # Configure SpaCy cache directories (MUST be writable)
 os.environ['HOME'] = '/tmp'
-# Configure argostranslate to use persisted directory in /app
-os.environ.setdefault('ARGOS_PACKAGES_DIR', '/app/.argos_packages')
+# ARGOS_PACKAGES_DIR should be set via Dockerfile or .env
+# Default only if not set: /app/models/translate/argos-packages
+if 'ARGOS_PACKAGES_DIR' not in os.environ:
+    os.environ['ARGOS_PACKAGES_DIR'] = '/app/models/translate/argos-packages'
 
-
-# Check for spaCy model at startup and provide clear error if missing
-try:
-    import spacy
-    spacy.load("xx_sent_ud_sm")
-except (OSError, ImportError) as e:
-    raise RuntimeError(
-        "spaCy model 'xx_sent_ud_sm' is missing from the image.\n"
-        "Please rebuild your Docker image to include the model.\n"
-        "See Dockerfile for installation instructions.\n"
-        f"Original error: {e}"
-    )
 
 from app.config import setup_logging, get_settings, logger
 from app.server import get_websocket_server
 
 settings = get_settings()
+
+
+async def initialize_spacy_model():
+    """Initialize and warm start spaCy model.
+    
+    This loads the xx_sent_ud_sm model once at startup and caches it globally,
+    preventing repeated downloads or loads during runtime.
+    """
+    logger.info("spacy_warm_start_initializing")
+    
+    try:
+        import spacy
+        # Load model (will be cached globally)
+        nlp = spacy.load("xx_sent_ud_sm")
+        
+        # Perform a test processing to fully warm up the model
+        test_doc = nlp("Test sentence for warm start.")
+        
+        logger.info(
+            "spacy_warm_start_complete",
+            model="xx_sent_ud_sm",
+            pipeline_components=nlp.pipe_names
+        )
+        
+    except (OSError, ImportError) as e:
+        logger.error(
+            "spacy_warm_start_failed",
+            error=str(e),
+            message="spaCy model 'xx_sent_ud_sm' is missing or failed to load",
+            exc_info=True
+        )
+        raise RuntimeError(
+            "spaCy model 'xx_sent_ud_sm' is missing from the image.\n"
+            "Please rebuild your Docker image to include the model.\n"
+            "See Dockerfile for installation instructions.\n"
+            f"Original error: {e}"
+        )
+
+
+async def initialize_stt_models():
+    """Initialize and warm up STT models for configured languages.
+    
+    This implements warm start by preloading STT models at application startup
+    instead of lazy loading them on first use (cold start).
+    """
+    if not settings.stt_enable_warm_start:
+        logger.info("stt_warm_start_disabled")
+        return
+    
+    languages_to_preload = settings.stt_preload_languages_list
+    
+    if not languages_to_preload:
+        logger.warning("stt_warm_start_no_languages_configured")
+        return
+    
+    logger.info(
+        "stt_warm_start_initializing",
+        languages=languages_to_preload,
+        count=len(languages_to_preload)
+    )
+    
+    from app.pipeline.stt import STTFactory
+    import time
+    
+    start_time = time.time()
+    successfully_loaded = []
+    failed_to_load = []
+    
+    for language in languages_to_preload:
+        try:
+            logger.info(f"stt_preloading_model", language=language)
+            
+            # Get model path for language
+            model_path = settings.get_vosk_model_path(language)
+            
+            # Create and cache the STT engine - this loads the model
+            engine = STTFactory.create(
+                engine_type=settings.stt_engine,
+                language=language,
+                model_path=model_path
+            )
+            
+            # Create a test recognizer to fully warm up the model
+            recognizer = engine.create_recognizer()
+            
+            successfully_loaded.append(language)
+            logger.info(f"stt_model_preloaded_successfully", language=language)
+            
+        except Exception as e:
+            failed_to_load.append(language)
+            logger.error(
+                "stt_model_preload_failed",
+                language=language,
+                error=str(e),
+                exc_info=True
+            )
+    
+    total_time = time.time() - start_time
+    
+    logger.info(
+        "stt_warm_start_complete",
+        total_time_seconds=round(total_time, 2),
+        successfully_loaded=successfully_loaded,
+        failed_to_load=failed_to_load,
+        success_count=len(successfully_loaded),
+        failure_count=len(failed_to_load)
+    )
+
+
+async def initialize_translation_models():
+    """Initialize and warm up Translation models.
+    
+    This implements warm start by preloading translation models at application startup.
+    Can warm up all installed packages or just common pairs based on configuration.
+    """
+    if not settings.translation_enable_warm_start:
+        logger.info("translation_warm_start_disabled")
+        return
+    
+    logger.info(
+        "translation_warm_start_initializing",
+        mode=settings.translation_warm_start_mode
+    )
+    
+    from app.pipeline.translate import get_translator
+    import time
+    
+    start_time = time.time()
+    
+    try:
+        translator = get_translator()
+        
+        if settings.translation_warm_start_mode == "all":
+            # Warm up all installed translation packages
+            translator.warm_up()
+        else:
+            # Warm up only common language pairs
+            common_pairs = settings.translation_common_pairs_list
+            if common_pairs:
+                translator.warm_up_common_pairs(common_pairs)
+            else:
+                logger.warning("translation_warm_start_no_pairs_configured")
+        
+        total_time = time.time() - start_time
+        
+        logger.info(
+            "translation_warm_start_complete",
+            total_time_seconds=round(total_time, 2),
+            mode=settings.translation_warm_start_mode
+        )
+        
+    except Exception as e:
+        logger.error(
+            "translation_warm_start_failed",
+            error=str(e),
+            exc_info=True
+        )
+
+
+async def initialize_tts_models():
+    """Initialize and warm up TTS models for configured languages.
+    
+    This implements warm start by preloading TTS models at application startup
+    instead of lazy loading them on first use (cold start).
+    """
+    if not settings.tts_enable_warm_start:
+        logger.info("tts_warm_start_disabled")
+        return
+    
+    languages_to_preload = settings.tts_preload_languages_list
+    
+    if not languages_to_preload:
+        logger.warning("tts_warm_start_no_languages_configured")
+        return
+    
+    logger.info(
+        "tts_warm_start_initializing",
+        languages=languages_to_preload,
+        count=len(languages_to_preload)
+    )
+    
+    from app.pipeline.tts import TTSFactory
+    import time
+    
+    start_time = time.time()
+    successfully_loaded = []
+    failed_to_load = []
+    
+    for language in languages_to_preload:
+        try:
+            logger.info(f"tts_preloading_model", language=language)
+            
+            # Create and cache the TTS engine - this loads the model
+            engine = TTSFactory.create(engine_type=settings.tts_engine, language=language)
+            
+            # Perform a test synthesis to fully warm up the model
+            test_text = "Hello" if language == "en" else "Test"
+            await engine.synthesize_to_bytes_async(test_text)
+            
+            successfully_loaded.append(language)
+            logger.info(f"tts_model_preloaded_successfully", language=language)
+            
+        except Exception as e:
+            failed_to_load.append(language)
+            logger.error(
+                "tts_model_preload_failed",
+                language=language,
+                error=str(e),
+                exc_info=True
+            )
+    
+    # Also warm up worker pool engines
+    try:
+        from app.workers import get_tts_pool
+        tts_pool = get_tts_pool()
+        await tts_pool.preload_engines(successfully_loaded)
+    except Exception as e:
+        logger.warning(
+            "tts_worker_pool_preload_failed",
+            error=str(e),
+            exc_info=True
+        )
+    
+    total_time = time.time() - start_time
+    
+    logger.info(
+        "tts_warm_start_complete",
+        total_time_seconds=round(total_time, 2),
+        successfully_loaded=successfully_loaded,
+        failed_to_load=failed_to_load,
+        success_count=len(successfully_loaded),
+        failure_count=len(failed_to_load)
+    )
 
 
 # Pydantic models for request validation
@@ -73,14 +296,81 @@ async def lifespan(app: FastAPI):
         port=settings.port
     )
     
-    # Initialize models and resources here
-    # await initialize_models()
+    # Initialize all models for warm start (prevents cold start delays)
+    # Run initializations in sequence to avoid resource contention
+    
+    # 1. Initialize spaCy model (used by Argos translation)
+    try:
+        await initialize_spacy_model()
+    except Exception as e:
+        logger.error(
+            "spacy_initialization_failed",
+            error=str(e),
+            exc_info=True
+        )
+        # Don't exit - app can continue without spaCy
+    
+    # 2. Initialize STT models
+    try:
+        await initialize_stt_models()
+    except Exception as e:
+        logger.error(
+            "stt_initialization_failed",
+            error=str(e),
+            exc_info=True
+        )
+    
+    # 3. Initialize Translation models
+    try:
+        await initialize_translation_models()
+    except Exception as e:
+        logger.error(
+            "translation_initialization_failed",
+            error=str(e),
+            exc_info=True
+        )
+    
+    # 4. Initialize TTS models
+    try:
+        await initialize_tts_models()
+    except Exception as e:
+        logger.error(
+            "tts_initialization_failed",
+            error=str(e),
+            exc_info=True
+        )
+    
+    # 5. Preload pipeline manager engines
+    try:
+        from app.pipeline import get_pipeline_manager
+        pipeline_manager = get_pipeline_manager()
+        
+        stt_langs = settings.stt_preload_languages_list if settings.stt_enable_warm_start else []
+        tts_langs = settings.tts_preload_languages_list if settings.tts_enable_warm_start else []
+        
+        if stt_langs or tts_langs:
+            pipeline_manager.preload_engines(
+                stt_languages=stt_langs,
+                tts_languages=tts_langs
+            )
+            logger.info("pipeline_manager_preload_complete")
+    except Exception as e:
+        logger.error(
+            "pipeline_manager_preload_failed",
+            error=str(e),
+            exc_info=True
+        )
     
     yield
     
     # Shutdown
     logger.info("application_shutting_down")
-    # Cleanup resources here
+    # Cleanup TTS cache if needed
+    try:
+        from app.pipeline.tts import TTSFactory
+        TTSFactory.clear_cache()
+    except Exception as e:
+        logger.warning("tts_cleanup_failed", error=str(e))
 
 
 # Create FastAPI application

@@ -19,6 +19,36 @@ except ImportError:
     ARGOS_AVAILABLE = False
     logger.warning("argos_not_available", message="Argos Translate not installed")
 
+# Global spaCy model cache (loaded once, shared across all instances)
+_spacy_model = None
+_spacy_load_attempted = False
+
+def get_spacy_model():
+    """Get or load spaCy model (cached, loaded only once).
+    
+    Returns:
+        Loaded spaCy model or None if unavailable
+    """
+    global _spacy_model, _spacy_load_attempted
+    
+    if _spacy_load_attempted:
+        return _spacy_model
+    
+    _spacy_load_attempted = True
+    
+    try:
+        import spacy
+        _spacy_model = spacy.load("xx_sent_ud_sm")
+        logger.info("spacy_xx_model_loaded_and_cached")
+        return _spacy_model
+    except (OSError, ImportError) as e:
+        logger.warning(
+            "spacy_xx_model_load_failed",
+            error=str(e),
+            message="Continuing without spaCy sentence segmentation"
+        )
+        return None
+
 
 class ArgosEngine:
     """Argos Translate translation engine."""
@@ -34,13 +64,8 @@ class ArgosEngine:
                 "Argos Translate not installed. Install with: pip install argostranslate"
             )
 
-        # Force spaCy to use the preinstalled model (one-time check)
-        import spacy
-        try:
-            spacy.load("xx_sent_ud_sm")
-            logger.info("spacy_xx_model_loaded")
-        except OSError as e:
-            logger.error("spacy_xx_model_missing", error=str(e))
+        # Get cached spaCy model (loaded once globally, not per instance)
+        get_spacy_model()
         
         # Only get installed packages, do not update package index
         try:

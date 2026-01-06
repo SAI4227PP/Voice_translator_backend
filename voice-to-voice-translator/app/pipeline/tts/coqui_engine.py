@@ -27,6 +27,9 @@ except ImportError:
 class CoquiEngine:
     """Coqui TTS engine."""
     
+    # Class-level cache for loaded models to enable true warm start
+    _model_cache = {}
+    
     def __init__(self, model_name: Optional[str] = None, language: str = "en"):
         """Initialize Coqui TTS engine.
         
@@ -46,13 +49,14 @@ class CoquiEngine:
         self.language = language
         self.tts: Optional[CoquiTTS] = None
         
-        # Load model
+        # Load model (uses cache if available for warm start)
         self._load_model()
         
         logger.info(
             "coqui_engine_initialized",
             model_name=self.model_name,
-            language=language
+            language=language,
+            cached=self.model_name in self._model_cache
         )
     
     def _get_default_model(self, language: str) -> str:
@@ -165,12 +169,18 @@ class CoquiEngine:
             ModelLoadError: If model cannot be loaded
         """
         try:
+            # Check if model is already cached (warm start)
+            if self.model_name in self._model_cache:
+                self.tts = self._model_cache[self.model_name]
+                logger.info(
+                    "coqui_model_loaded_from_cache",\n                    model=self.model_name,\n                    message=\"Using cached model (warm start)\"\n                )\n                return
+            
             # Pre-agree to TOS for XTTS models
             if "xtts" in self.model_name.lower():
                 self._agree_to_tos()
             
-            self.tts = CoquiTTS(model_name=self.model_name, progress_bar=False, gpu=False)
-            logger.info("coqui_model_loaded", model=self.model_name)
+            # Load model for the first time
+            logger.info(\"coqui_model_loading\", model=self.model_name, message=\"Loading model (cold start)\")\n            self.tts = CoquiTTS(model_name=self.model_name, progress_bar=False, gpu=False)\n            \n            # Cache the loaded model for future use (enables warm start)\n            self._model_cache[self.model_name] = self.tts\n            \n            logger.info(\n                \"coqui_model_loaded_and_cached\",\n                model=self.model_name,\n                cache_size=len(self._model_cache)\n            )
         
         except EOFError as e:
             # TOS prompt failed in non-interactive mode

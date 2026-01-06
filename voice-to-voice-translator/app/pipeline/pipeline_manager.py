@@ -276,8 +276,50 @@ class PipelineManager:
         for key in to_remove:
             del self._recognizers[key]
         
-        logger.info("pipeline_user_cleanup", user_id=user_id, removed=len(to_remove))
-
+        logger.info("pipeline_user_cleanup", user_id=user_id, removed=len(to_remove))    
+    def preload_engines(
+        self,
+        stt_languages: Optional[list[str]] = None,
+        tts_languages: Optional[list[str]] = None
+    ) -> None:
+        """Preload STT and TTS engines for specified languages (warm start).
+        
+        This ensures models are loaded before any requests arrive,
+        eliminating cold start delays.
+        
+        Args:
+            stt_languages: List of language codes for STT preloading
+            tts_languages: List of language codes for TTS preloading
+        """
+        if stt_languages:
+            logger.info("pipeline_preloading_stt_engines", languages=stt_languages)
+            for language in stt_languages:
+                try:
+                    self._get_stt_engine(language)
+                    logger.info("pipeline_stt_engine_preloaded", language=language)
+                except Exception as e:
+                    logger.error(
+                        "pipeline_stt_engine_preload_failed",
+                        language=language,
+                        error=str(e),
+                        exc_info=True
+                    )
+        
+        if tts_languages:
+            logger.info("pipeline_preloading_tts_engines", languages=tts_languages)
+            for language in tts_languages:
+                try:
+                    self._get_tts_engine(language)
+                    logger.info("pipeline_tts_engine_preloaded", language=language)
+                except Exception as e:
+                    logger.error(
+                        "pipeline_tts_engine_preload_failed",
+                        language=language,
+                        error=str(e),
+                        exc_info=True
+                    )
+        
+        logger.info("pipeline_engine_preload_complete")
 
 # Global pipeline manager instance
 _pipeline_manager: Optional[PipelineManager] = None

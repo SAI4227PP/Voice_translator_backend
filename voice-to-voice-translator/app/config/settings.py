@@ -110,6 +110,40 @@ class Settings(BaseSettings):
     # Worker Pools
     translation_workers: int = Field(default=4, description="Number of translation workers")
     tts_workers: int = Field(default=2, description="Number of TTS workers")
+    
+    # TTS Warm Start Configuration
+    tts_preload_languages: str = Field(
+        default="en,hi,es,fr",
+        description="Comma-separated list of languages to preload TTS models for warm start"
+    )
+    tts_enable_warm_start: bool = Field(
+        default=True,
+        description="Enable TTS model warm start (preload models at startup)"
+    )
+    
+    # STT Warm Start Configuration
+    stt_preload_languages: str = Field(
+        default="en,hi",
+        description="Comma-separated list of languages to preload STT models for warm start"
+    )
+    stt_enable_warm_start: bool = Field(
+        default=True,
+        description="Enable STT model warm start (preload models at startup)"
+    )
+    
+    # Translation Warm Start Configuration
+    translation_enable_warm_start: bool = Field(
+        default=True,
+        description="Enable Translation model warm start (preload models at startup)"
+    )
+    translation_warm_start_mode: str = Field(
+        default="common",
+        description="Translation warm start mode: 'all' (all installed packages) or 'common' (common pairs only)"
+    )
+    translation_common_pairs: str = Field(
+        default="en-hi,hi-en,en-es,es-en,en-fr,fr-en",
+        description="Comma-separated list of common translation pairs (format: src-tgt)"
+    )
 
     
     # Monitoring
@@ -141,6 +175,33 @@ class Settings(BaseSettings):
         if self.cors_origins == "*":
             return ["*"]
         return [origin.strip() for origin in self.cors_origins.split(",")]
+    
+    @property
+    def tts_preload_languages_list(self) -> list[str]:
+        """Get TTS preload languages as a list."""
+        if not self.tts_preload_languages:
+            return []
+        return [lang.strip() for lang in self.tts_preload_languages.split(",") if lang.strip()]
+    
+    @property
+    def stt_preload_languages_list(self) -> list[str]:
+        """Get STT preload languages as a list."""
+        if not self.stt_preload_languages:
+            return []
+        return [lang.strip() for lang in self.stt_preload_languages.split(",") if lang.strip()]
+    
+    @property
+    def translation_common_pairs_list(self) -> list[tuple[str, str]]:
+        """Get translation common pairs as a list of tuples."""
+        if not self.translation_common_pairs:
+            return []
+        pairs = []
+        for pair in self.translation_common_pairs.split(","):
+            pair = pair.strip()
+            if "-" in pair:
+                src, tgt = pair.split("-", 1)
+                pairs.append((src.strip(), tgt.strip()))
+        return pairs
     
     def get_vosk_model_path(self, language: str) -> str:
         """Get Vosk model path for a specific language.

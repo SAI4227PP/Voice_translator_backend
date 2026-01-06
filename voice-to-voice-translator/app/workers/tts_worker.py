@@ -143,7 +143,44 @@ class TTSWorkerPool:
             task = asyncio.create_task(self._worker_loop(worker))
             self._worker_tasks.append(task)
         
-        logger.info("tts_worker_pool_started")
+        logger.info("tts_worker_pool_started")    
+    async def preload_engines(self, languages: list[str]) -> None:
+        """Preload TTS engines for specified languages across all workers.
+        
+        This implements warm start by loading models before any requests arrive,
+        eliminating cold start delays on first use.
+        
+        Args:
+            languages: List of language codes to preload
+        """
+        logger.info(
+            "tts_worker_pool_preloading",
+            languages=languages,
+            workers=self.num_workers
+        )
+        
+        # Preload engines in the first worker (models are cached at class level)
+        if self.workers and languages:
+            worker = self.workers[0]
+            for language in languages:
+                try:
+                    # Get/create engine - this will cache it
+                    worker._get_tts_engine(language)
+                    logger.info(
+                        "tts_worker_engine_preloaded",
+                        worker_id=worker.worker_id,
+                        language=language
+                    )
+                except Exception as e:
+                    logger.error(
+                        "tts_worker_engine_preload_failed",
+                        worker_id=worker.worker_id,
+                        language=language,
+                        error=str(e),
+                        exc_info=True
+                    )
+        
+        logger.info("tts_worker_pool_preload_complete")
     
     async def stop(self) -> None:
         """Stop worker pool."""

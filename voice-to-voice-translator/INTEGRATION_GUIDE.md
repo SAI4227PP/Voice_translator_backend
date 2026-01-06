@@ -10,7 +10,7 @@ This guide shows how all modules integrate together to form a complete voice-to-
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         FastAPI Server                           │
+│                         FastAPI Server                          │
 │                          (main.py)                              │
 └────────────────────────┬────────────────────────────────────────┘
                          │

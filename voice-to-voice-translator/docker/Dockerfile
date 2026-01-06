@@ -45,8 +45,7 @@ COPY requirements.txt .
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip setuptools wheel && \
-    pip install -r requirements.txt && \
-    python -m spacy download xx_sent_ud_sm
+    pip install -r requirements.txt
 
 # -------------------------------
 # Production runtime
@@ -78,7 +77,7 @@ ENV HOST=0.0.0.0 \
     LOG_LEVEL=INFO \
     ENVIRONMENT=production \
     DEBUG=False \
-    ARGOS_PACKAGES_DIR=/app/models/argos \
+    ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
     XDG_CACHE_HOME=/tmp \
     HOME=/app \
