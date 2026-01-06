@@ -235,6 +235,25 @@ class Translator:
         if not self.engine:
             return False
         return self.engine.is_language_pair_available(source_lang, target_lang)
+    
+    def warm_up(self) -> None:
+        """Warm up translation models by preloading all installed packages.
+        
+        Delegates to the underlying engine's warm_up method.
+        """
+        if self.engine:
+            self.engine.warm_up()
+    
+    def warm_up_common_pairs(self, pairs: list[tuple[str, str]]) -> None:
+        """Warm up only common language pairs.
+        
+        Args:
+            pairs: List of (source, target) language code tuples
+            
+        Delegates to the underlying engine's warm_up_common_pairs method.
+        """
+        if self.engine:
+            self.engine.warm_up_common_pairs(pairs)
 
 
 # Global translator instance

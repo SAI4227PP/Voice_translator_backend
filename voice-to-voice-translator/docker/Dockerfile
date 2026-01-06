@@ -45,7 +45,11 @@ COPY requirements.txt .
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip setuptools wheel && \
-    pip install -r requirements.txt
+    pip install -r requirements.txt && \
+    python -m spacy validate
+
+# Verify spaCy model installation
+RUN python -c "import spacy; nlp = spacy.load('xx_sent_ud_sm'); print('spaCy model verified:', nlp.meta['name'])"
 
 # -------------------------------
 # Production runtime

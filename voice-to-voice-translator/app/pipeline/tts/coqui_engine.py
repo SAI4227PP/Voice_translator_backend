@@ -173,14 +173,28 @@ class CoquiEngine:
             if self.model_name in self._model_cache:
                 self.tts = self._model_cache[self.model_name]
                 logger.info(
-                    "coqui_model_loaded_from_cache",\n                    model=self.model_name,\n                    message=\"Using cached model (warm start)\"\n                )\n                return
+                    "coqui_model_loaded_from_cache",
+                    model=self.model_name,
+                    message="Using cached model (warm start)"
+                )
+                return
             
             # Pre-agree to TOS for XTTS models
             if "xtts" in self.model_name.lower():
                 self._agree_to_tos()
             
             # Load model for the first time
-            logger.info(\"coqui_model_loading\", model=self.model_name, message=\"Loading model (cold start)\")\n            self.tts = CoquiTTS(model_name=self.model_name, progress_bar=False, gpu=False)\n            \n            # Cache the loaded model for future use (enables warm start)\n            self._model_cache[self.model_name] = self.tts\n            \n            logger.info(\n                \"coqui_model_loaded_and_cached\",\n                model=self.model_name,\n                cache_size=len(self._model_cache)\n            )
+            logger.info("coqui_model_loading", model=self.model_name, message="Loading model (cold start)")
+            self.tts = CoquiTTS(model_name=self.model_name, progress_bar=False, gpu=False)
+            
+            # Cache the loaded model for future use (enables warm start)
+            self._model_cache[self.model_name] = self.tts
+            
+            logger.info(
+                "coqui_model_loaded_and_cached",
+                model=self.model_name,
+                cache_size=len(self._model_cache)
+            )
         
         except EOFError as e:
             # TOS prompt failed in non-interactive mode
