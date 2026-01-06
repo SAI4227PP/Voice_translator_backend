@@ -52,6 +52,24 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN python -c "import spacy; nlp = spacy.load('xx_sent_ud_sm'); print('spaCy model verified:', nlp.meta['name'])"
 
 # -------------------------------
+# Download models
+# -------------------------------
+FROM python-deps AS model-downloader
+WORKDIR /app
+
+# Copy download script (create scripts directory structure)
+RUN mkdir -p scripts
+COPY scripts/download_models.py scripts/download_models.py
+
+# Download all models during build (working directory is /app)
+RUN mkdir -p models && \
+    python scripts/download_models.py && \
+    ls -la models/ && \
+    ls -la models/stt/ && \
+    ls -la models/translate/argos-packages/ && \
+    echo "✓ All models downloaded successfully"
+
+# -------------------------------
 # Production runtime
 # -------------------------------
 FROM base AS production
@@ -61,13 +79,16 @@ WORKDIR /app
 COPY --from=python-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=python-deps /usr/local/bin /usr/local/bin
 
+# Copy downloaded models
+COPY --from=model-downloader /app/models /app/models
+
 # Copy app code
 COPY docs/ ./docs/
 COPY scripts/ ./scripts/
 COPY app/ ./app/
 
 # Runtime user & dirs
-RUN mkdir -p logs data models /tmp /app/.local && \
+RUN mkdir -p logs data /tmp /app/.local && \
     groupadd -r appuser && \
     useradd -r -g appuser -u 1000 appuser && \
     chown -R appuser:appuser /app /tmp && \
