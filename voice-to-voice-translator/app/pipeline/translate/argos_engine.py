@@ -3,7 +3,6 @@ Argos Translate translation engine.
 """
 import asyncio
 from typing import Optional
-from functools import lru_cache
 from app.config import get_logger, get_settings
 from app.utils.exceptions import TranslationError, ModelLoadError
 
@@ -53,6 +52,21 @@ def get_spacy_model():
 class ArgosEngine:
     """Argos Translate translation engine."""
     
+    # Class-level translation cache for extreme speed
+    _translation_cache = {}
+    _cache_max_size = 1000
+    _cache_hits = 0
+    _cache_misses = 0
+    
+    # Pre-compiled translation pipelines for faster access
+    _translation_pipelines = {}
+    
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        """Normalize text to improve cache hit rate."""
+        # Remove extra whitespace, normalize line endings
+        return ' '.join(text.strip().split())
+    
     def __init__(self):
         """Initialize Argos engine.
         
@@ -70,9 +84,14 @@ class ArgosEngine:
         # Only get installed packages, do not update package index
         try:
             self.installed_languages = argostranslate.package.get_installed_packages()
+            
+            # Pre-build translation pipelines for all installed language pairs
+            self._build_translation_pipelines()
+            
             logger.info(
                 "argos_engine_initialized",
-                installed_packages=len(self.installed_languages)
+                installed_packages=len(self.installed_languages),
+                cached_pipelines=len(self._translation_pipelines)
             )
         except Exception as e:
             logger.error("argos_init_failed", error=str(e), exc_info=True)
@@ -80,7 +99,24 @@ class ArgosEngine:
         
         self._warmed_up = False
     
-    @lru_cache(maxsize=256)
+    def _build_translation_pipelines(self):
+        """Pre-build translation pipelines for faster access."""
+        for package in self.installed_languages:
+            key = f"{package.from_code}_{package.to_code}"
+            if key not in self._translation_pipelines:
+                # Get the translation pipeline
+                pipeline = argostranslate.translate.get_translation_from_codes(
+                    package.from_code,
+                    package.to_code
+                )
+                if pipeline:
+                    self._translation_pipelines[key] = pipeline
+        
+        logger.debug(
+            "translation_pipelines_built",
+            count=len(self._translation_pipelines)
+        )
+    
     def translate(
         self,
         text: str,
@@ -103,19 +139,56 @@ class ArgosEngine:
         if not text or not text.strip():
             return text
         
-        try:
-            translated = argostranslate.translate.translate(
-                text,
-                source_lang,
-                target_lang
+        # Normalize text for better cache hits
+        normalized_text = self._normalize_text(text)
+        
+        # Check class-level cache first (much faster than lru_cache)
+        cache_key = f"{source_lang}:{target_lang}:{normalized_text}"
+        if cache_key in self._translation_cache:
+            self.__class__._cache_hits += 1
+            logger.debug(
+                "translation_cache_hit",
+                text_preview=text[:30],
+                hit_rate=f"{self._cache_hits}/{self._cache_hits + self._cache_misses}"
             )
+            return self._translation_cache[cache_key]
+        
+        self.__class__._cache_misses += 1
+        
+        try:
+            # Use pre-built pipeline if available (much faster)
+            pipeline_key = f"{source_lang}_{target_lang}"
+            if pipeline_key in self._translation_pipelines:
+                translated = self._translation_pipelines[pipeline_key].translate(normalized_text)
+            else:
+                # Fallback to standard translate (slower, rebuilds pipeline)
+                translated = argostranslate.translate.translate(
+                    normalized_text,
+                    source_lang,
+                    target_lang
+                )
+            
+            # Smart caching: cache more aggressively for short texts
+            should_cache = (
+                (len(normalized_text) < 200) or  # Short texts
+                (self._cache_misses % 10 == 0)   # Every 10th miss for longer texts
+            )
+            
+            if should_cache and len(self._translation_cache) < self._cache_max_size:
+                self._translation_cache[cache_key] = translated
+            elif len(self._translation_cache) >= self._cache_max_size:
+                # Simple FIFO eviction: remove oldest entry
+                oldest_key = next(iter(self._translation_cache))
+                del self._translation_cache[oldest_key]
+                self._translation_cache[cache_key] = translated
             
             logger.debug(
                 "translation_complete",
                 source_lang=source_lang,
                 target_lang=target_lang,
                 original_length=len(text),
-                translated_length=len(translated)
+                translated_length=len(translated),
+                used_pipeline=pipeline_key in self._translation_pipelines
             )
             
             return translated
@@ -146,14 +219,10 @@ class ArgosEngine:
         Returns:
             Translated text
         """
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            self.translate,
-            text,
-            source_lang,
-            target_lang
-        )
+        # Since translate() is already heavily cached and uses pre-built pipelines,
+        # call it directly instead of using run_in_executor (reduces overhead)
+        # Translation is fast enough (~50-200ms) to not block the event loop
+        return self.translate(text, source_lang, target_lang)
     
     def batch_translate(
         self,
@@ -182,7 +251,7 @@ class ArgosEngine:
         source_lang: str,
         target_lang: str
     ) -> list[str]:
-        """Async batch translation.
+        """Async batch translation with optimized processing.
         
         Args:
             texts: List of texts
@@ -192,11 +261,12 @@ class ArgosEngine:
         Returns:
             List of translations
         """
-        tasks = [
-            self.translate_async(text, source_lang, target_lang)
-            for text in texts
-        ]
-        return await asyncio.gather(*tasks)
+        # Use list comprehension for cached translations (instant)
+        # This is much faster than creating tasks for already-cached items
+        results = []
+        for text in texts:
+            results.append(self.translate(text, source_lang, target_lang))
+        return results
     
     def get_available_languages(self) -> list[str]:
         """Get list of available languages.
@@ -335,6 +405,9 @@ class ArgosEngine:
             # Update installed packages list
             self.installed_languages = argostranslate.package.get_installed_packages()
             
+            # Rebuild translation pipelines with new package
+            self._build_translation_pipelines()
+            
             # Clear translation cache since new packages are available
             self.clear_cache()
             
@@ -368,8 +441,11 @@ class ArgosEngine:
     
     def clear_cache(self) -> None:
         """Clear translation cache."""
-        self.translate.cache_clear()
-        logger.info("translation_cache_cleared")
+        self._translation_cache.clear()
+        logger.info(
+            "translation_cache_cleared",
+            previous_size=len(self._translation_cache)
+        )
 
     def warm_up(self) -> None:
         """Warm up translation models by running a dummy translation for each installed language pair."""

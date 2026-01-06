@@ -30,6 +30,18 @@ class CoquiEngine:
     # Class-level cache for loaded models to enable true warm start
     _model_cache = {}
     
+    # Class-level cache for synthesized audio (common phrases)
+    _audio_cache = {}
+    _cache_max_size = 200  # Maximum cached audio entries (increased for better hit rate)
+    _cache_hits = 0
+    _cache_misses = 0
+    
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        """Normalize text to improve cache hit rate."""
+        # Remove extra whitespace, lowercase for consistency
+        return ' '.join(text.strip().split()).lower()
+    
     def __init__(self, model_name: Optional[str] = None, language: str = "en"):
         """Initialize Coqui TTS engine.
         
@@ -68,12 +80,13 @@ class CoquiEngine:
         Returns:
             Model name
         """
-        # For English and common European languages, use specific models (no TOS required)
+        # For English and common European languages, use VITS models (faster than Tacotron2)
+        # VITS is a single-stage model that's faster and produces good quality
         simple_models = {
-            "en": "tts_models/en/ljspeech/tacotron2-DDC",
+            "en": "tts_models/en/ljspeech/vits",  # Faster than tacotron2-DDC
             "es": "tts_models/es/mai/tacotron2-DDC",
             "fr": "tts_models/fr/mai/tacotron2-DDC",
-            "de": "tts_models/de/thorsten/tacotron2-DDC",
+            "de": "tts_models/de/thorsten/vits",  # VITS available for German
             "it": "tts_models/it/mai/tacotron2-DDC",
             "pt": "tts_models/pt/cv/vits",
             "ru": "tts_models/ru/multi-dataset/vits",
@@ -185,10 +198,22 @@ class CoquiEngine:
             
             # Load model for the first time
             logger.info("coqui_model_loading", model=self.model_name, message="Loading model (cold start)")
-            self.tts = CoquiTTS(model_name=self.model_name, progress_bar=False, gpu=False)
+            
+            # Try to use GPU if available for faster inference
+            import torch
+            use_gpu = torch.cuda.is_available() and settings.enable_gpu
+            
+            self.tts = CoquiTTS(model_name=self.model_name, progress_bar=False, gpu=use_gpu)
             
             # Cache the loaded model for future use (enables warm start)
             self._model_cache[self.model_name] = self.tts
+            
+            # Pre-warm the model with a short synthesis to initialize all components
+            try:
+                _ = self.tts.tts(text="Hello")
+                logger.info("coqui_model_prewarmed", model=self.model_name)
+            except Exception as e:
+                logger.warning("coqui_model_prewarm_failed", error=str(e))
             
             logger.info(
                 "coqui_model_loaded_and_cached",
@@ -240,6 +265,22 @@ class CoquiEngine:
         if not text or not text.strip():
             return np.array([], dtype=np.float32)
         
+        # Normalize text for better cache hits
+        normalized_text = self._normalize_text(text)
+        
+        # Check cache for common phrases (significant speedup)
+        cache_key = f"{self.model_name}:{self.language}:{normalized_text}"
+        if cache_key in self._audio_cache:
+            self.__class__._cache_hits += 1
+            logger.debug(
+                "tts_cache_hit",
+                text_preview=text[:30],
+                hit_rate=f"{self._cache_hits}/{self._cache_hits + self._cache_misses}"
+            )
+            return self._audio_cache[cache_key]
+        
+        self.__class__._cache_misses += 1
+        
         try:
             # For XTTS v2 multilingual model, specify language
             if "xtts" in self.model_name.lower():
@@ -254,15 +295,33 @@ class CoquiEngine:
                 # These models typically work without language parameter
                 audio = self.tts.tts(text=text)
             
+            # Convert to numpy array
+            audio_array = np.array(audio, dtype=np.float32)
+            
+            # Smart caching: prioritize short, common phrases
+            should_cache = (
+                (len(normalized_text) < 150) or  # Short texts
+                (self._cache_misses % 5 == 0)    # Every 5th miss for longer texts
+            )
+            
+            if should_cache and len(self._audio_cache) < self._cache_max_size:
+                self._audio_cache[cache_key] = audio_array
+            elif len(self._audio_cache) >= self._cache_max_size:
+                # FIFO eviction: remove oldest entry
+                oldest_key = next(iter(self._audio_cache))
+                del self._audio_cache[oldest_key]
+                self._audio_cache[cache_key] = audio_array
+            
             logger.debug(
                 "tts_synthesis_complete",
                 text_length=len(text),
-                audio_length=len(audio) if isinstance(audio, np.ndarray) else 0,
+                audio_length=len(audio_array),
                 model=self.model_name,
-                language=self.language
+                language=self.language,
+                cached=cache_key in self._audio_cache
             )
             
-            return np.array(audio, dtype=np.float32)
+            return audio_array
         
         except Exception as e:
             logger.error(
@@ -289,6 +348,26 @@ class CoquiEngine:
         Returns:
             Audio as PCM16 bytes (suitable for API responses)
         """
+        # Check if result is cached - if so, return immediately without executor
+        normalized_text = self._normalize_text(text)
+        cache_key = f"{self.model_name}:{self.language}:{normalized_text}"
+        
+        if cache_key in self._audio_cache:
+            # Fast path: convert cached numpy array to bytes directly
+            audio = self._audio_cache[cache_key]
+            audio_int16 = (audio * 32767).astype(np.int16)
+            
+            import io
+            import wave
+            wav_buffer = io.BytesIO()
+            with wave.open(wav_buffer, 'wb') as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(self.get_sample_rate())
+                wav_file.writeframes(audio_int16.tobytes())
+            return wav_buffer.getvalue()
+        
+        # Not cached: use executor for synthesis (can take 500ms-2s)
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
