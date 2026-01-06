@@ -63,17 +63,19 @@ WORKDIR /app
 COPY --from=python-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=python-deps /usr/local/bin /usr/local/bin
 
-# Copy app code
+# Runtime user & dirs (create BEFORE copying app code for better caching)
+RUN mkdir -p logs data models /tmp /app/.local && \
+    groupadd -r appuser && \
+    useradd -r -g appuser -u 1000 appuser && \
+    chmod -R 755 /usr/local/lib/python3.11/site-packages
+
+# Copy app code (after user creation to cache better)
 COPY docs/ ./docs/
 COPY scripts/ ./scripts/
 COPY app/ ./app/
 
-# Runtime user & dirs
-RUN mkdir -p logs data models /tmp /app/.local && \
-    groupadd -r appuser && \
-    useradd -r -g appuser -u 1000 appuser && \
-    chown -R appuser:appuser /app /tmp && \
-    chmod -R 755 /usr/local/lib/python3.11/site-packages
+# Set ownership for app files
+RUN chown -R appuser:appuser /app /tmp
 
 # -------------------------------
 # Runtime environment
@@ -98,5 +100,7 @@ EXPOSE 7860
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:7860/health || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]

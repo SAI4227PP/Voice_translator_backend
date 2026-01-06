@@ -14,8 +14,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install only packages needed for downloading
-RUN pip install --no-cache-dir aiohttp tqdm argostranslate
+# Install packages with cache mount AND cleanup in same layer to save space
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install aiohttp tqdm argostranslate && \
+    find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11 -type f -name "*.pyc" -delete && \
+    rm -rf /tmp/*
 
 # Copy download script
 COPY scripts/download_models.py scripts/download_models.py
