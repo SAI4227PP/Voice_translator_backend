@@ -423,11 +423,6 @@ async def main():
     print(" " * 20 + "Model Downloader")
     print("="*70)
     
-    # Check if we're in the right directory
-    if not Path("requirements.txt").exists():
-        print("\n✗ Error: Please run this script from the project root directory")
-        sys.exit(1)
-    
     # Create models directory
     Path("models").mkdir(exist_ok=True)
     
