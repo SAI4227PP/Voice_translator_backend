@@ -1,28 +1,32 @@
-# Volume Mount Setup Guide
+# Model Setup Guide
 
-This guide explains how to set up persistent model storage using Docker volumes.
+This guide explains model setup for the voice translator.
 
-## Quick Start
+## Quick Start (Models Built Into Image)
 
-### 1. Download Models (First Time Only)
-
-Run the download script to populate `/opt/voice-models` directory:
+**All models are now downloaded during Docker build** - no separate download needed!
 
 ```bash
-# Create the directory
-sudo mkdir -p /opt/voice-models
+# Build image (models included)
+cd voice-to-voice-translator/docker
+docker build -t voice-translator .
 
-# Run download script (as root to write to /opt)
-sudo python scripts/download_models.py
-
-# Or run inside a temporary container
-docker run --rm \
-  -v /opt/voice-models:/app/models \
-  voice-translator \
-  python scripts/download_models.py
+# Run container
+docker run -d -p 7860:7860 \
+  --restart unless-stopped \
+  --env-file .env \
+  --name voice-translator \
+  voice-translator
 ```
 
-### 2. Run Container with Volume Mount
+Models are baked into the Docker image at `/app/models/`:
+- ✅ **Vosk STT** - 5 languages (en, hi, te, gu, bn)
+- ✅ **Argos Translation** - 4 packages (en↔hi, en↔bn)
+- ✅ **Coqui TTS** - Auto-downloads on first use
+
+## Optional: Volume Mount (For Model Persistence)
+
+If you want to persist TTS cache or update models without rebuilding:
 
 ```bash
 docker run -d -p 7860:7860 \
@@ -32,6 +36,8 @@ docker run -d -p 7860:7860 \
   --name voice-translator \
   voice-translator
 ```
+
+This mounts `/opt/voice-models` to share models across rebuilds.
 
 ## Directory Structure
 

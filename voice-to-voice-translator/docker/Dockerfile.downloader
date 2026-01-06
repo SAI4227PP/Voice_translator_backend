@@ -1,0 +1,19 @@
+# Dockerfile for model downloader
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Install only packages needed for downloading
+RUN pip install --no-cache-dir aiohttp tqdm argostranslate
+
+# Copy download script
+COPY scripts/download_models.py scripts/download_models.py
+
+# Create models directory
+RUN mkdir -p models
+
+# Script will be run via docker-compose command

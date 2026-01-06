@@ -44,30 +44,14 @@ WORKDIR /app
 COPY requirements.txt .
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip setuptools wheel && \
-    pip install -r requirements.txt && \
-    python -m spacy validate
+    pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt && \
+    python -m spacy validate && \
+    find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11 -type f -name "*.pyc" -delete
 
 # Verify spaCy model installation
 RUN python -c "import spacy; nlp = spacy.load('xx_sent_ud_sm'); print('spaCy model verified:', nlp.meta['name'])"
-
-# -------------------------------
-# Download models
-# -------------------------------
-FROM python-deps AS model-downloader
-WORKDIR /app
-
-# Copy download script (create scripts directory structure)
-RUN mkdir -p scripts
-COPY scripts/download_models.py scripts/download_models.py
-
-# Download all models during build (working directory is /app)
-RUN mkdir -p models && \
-    python scripts/download_models.py && \
-    ls -la models/ && \
-    ls -la models/stt/ && \
-    ls -la models/translate/argos-packages/ && \
-    echo "✓ All models downloaded successfully"
 
 # -------------------------------
 # Production runtime
@@ -79,16 +63,13 @@ WORKDIR /app
 COPY --from=python-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=python-deps /usr/local/bin /usr/local/bin
 
-# Copy downloaded models
-COPY --from=model-downloader /app/models /app/models
-
 # Copy app code
 COPY docs/ ./docs/
 COPY scripts/ ./scripts/
 COPY app/ ./app/
 
 # Runtime user & dirs
-RUN mkdir -p logs data /tmp /app/.local && \
+RUN mkdir -p logs data models /tmp /app/.local && \
     groupadd -r appuser && \
     useradd -r -g appuser -u 1000 appuser && \
     chown -R appuser:appuser /app /tmp && \
