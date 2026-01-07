@@ -42,12 +42,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 FROM base AS python-deps
 WORKDIR /app
 
-COPY requirements.txt .
-
+# Upgrade pip first (cached separately)
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt && \
-    python -m spacy validate && \
+    pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Copy and install requirements (separate layer for better caching)
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r requirements.txt
+
+# Validate and cleanup (separate layer)
+RUN python -m spacy validate && \
     find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
     find /usr/local/lib/python3.11 -type f -name "*.pyc" -delete
 

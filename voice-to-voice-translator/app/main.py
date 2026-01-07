@@ -4,7 +4,7 @@ Main application entry point.
 import os
 import asyncio
 import uvicorn
-from fastapi import FastAPI, WebSocket, HTTPException, status
+from fastapi import FastAPI, WebSocket, HTTPException, status, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
@@ -280,6 +280,22 @@ class TTSRequest(BaseModel):
     text: str = Field(..., description="Text to synthesize")
     language: str = Field(..., description="Language code (e.g., 'en', 'hi', 'es')")
     format: str = Field(default="wav", description="Audio format: 'wav' or 'mp3'")
+
+
+class STTRequest(BaseModel):
+    """Request model for STT audio transcription."""
+    audio_data: str = Field(..., description="Base64-encoded audio data (PCM16 or WAV)")
+    language: str = Field(..., description="Language code (e.g., 'en', 'hi', 'te')")
+    sample_rate: int = Field(default=16000, description="Audio sample rate in Hz")
+    return_confidence: bool = Field(default=False, description="Include confidence score in response")
+
+
+class BatchSTTRequest(BaseModel):
+    """Request model for batch STT transcription."""
+    audio_files: List[str] = Field(..., description="List of base64-encoded audio data", max_items=50)
+    language: str = Field(..., description="Language code for all audio files")
+    sample_rate: int = Field(default=16000, description="Audio sample rate in Hz")
+    return_confidence: bool = Field(default=False, description="Include confidence scores")
 
 
 @asynccontextmanager
@@ -822,6 +838,328 @@ async def generate_tts_audio(request: TTSRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"TTS generation failed: {str(e)}"
+        )
+
+
+@app.post("/stt/transcribe")
+async def transcribe_audio(request: STTRequest):
+    """Transcribe audio to text using STT engine.
+    
+    Request body:
+        {
+            "audio_data": "<base64-encoded audio>",
+            "language": "en",
+            "sample_rate": 16000,
+            "return_confidence": false
+        }
+    
+    Returns:
+        {
+            "text": "transcribed text",
+            "language": "en",
+            "confidence": 0.95,  // if return_confidence=true
+            "processing_time_ms": 123.45
+        }
+    """
+    from app.pipeline.stt import STTFactory
+    from app.utils.model_scanner import ModelScanner
+    import time
+    import base64
+    
+    try:
+        # Get available STT languages
+        scanner = ModelScanner()
+        available_stt_languages = scanner.get_available_stt_languages()
+        
+        # Check if language is supported
+        if request.language not in available_stt_languages:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": f"Language '{request.language}' is not supported for STT",
+                    "available_languages": list(available_stt_languages.keys()),
+                    "message": "Check /languages/supported for available STT languages"
+                }
+            )
+        
+        # Decode base64 audio data
+        try:
+            audio_bytes = base64.b64decode(request.audio_data)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid base64 audio data: {str(e)}"
+            )
+        
+        # Get STT engine
+        stt_engine = STTFactory.get_engine(request.language)
+        
+        # Create recognizer
+        recognizer = stt_engine.create_recognizer()
+        
+        # Transcribe audio
+        start_time = time.time()
+        result = await stt_engine.recognize_async(audio_bytes, recognizer)
+        
+        # Finalize to get complete result
+        final_result = stt_engine.finalize(recognizer)
+        processing_time = (time.time() - start_time) * 1000
+        
+        # Extract text and confidence
+        transcribed_text = final_result.get("text", "")
+        
+        logger.info(
+            "stt_transcribed",
+            language=request.language,
+            text_length=len(transcribed_text),
+            audio_size=len(audio_bytes),
+            processing_time_ms=round(processing_time, 2)
+        )
+        
+        # Build response
+        response = {
+            "text": transcribed_text,
+            "language": request.language,
+            "processing_time_ms": round(processing_time, 2)
+        }
+        
+        # Add confidence if requested (Vosk doesn't provide overall confidence)
+        if request.return_confidence:
+            response["confidence"] = final_result.get("confidence", None)
+        
+        return response
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("stt_transcription_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"STT transcription failed: {str(e)}"
+        )
+
+
+@app.post("/stt/transcribe-file")
+async def transcribe_audio_file(
+    file: UploadFile = File(..., description="Audio file to transcribe"),
+    language: str = Form(default="en", description="Language code"),
+    return_confidence: bool = Form(default=False, description="Include confidence score")
+):
+    """Transcribe audio file to text using STT engine.
+    
+    Upload an audio file (WAV, MP3, etc.) for transcription.
+    
+    Form Parameters:
+        file: Audio file (multipart/form-data)
+        language: Language code (default: "en")
+        return_confidence: Include confidence score (default: false)
+    
+    Returns:
+        {
+            "text": "transcribed text",
+            "language": "en",
+            "confidence": 0.95,  // if return_confidence=true
+            "file_size": 12345,
+            "processing_time_ms": 123.45
+        }
+    """
+    from fastapi import File, Form, UploadFile
+    from app.pipeline.stt import STTFactory
+    from app.utils.model_scanner import ModelScanner
+    import time
+    
+    try:
+        # Get available STT languages
+        scanner = ModelScanner()
+        available_stt_languages = scanner.get_available_stt_languages()
+        
+        # Check if language is supported
+        if language not in available_stt_languages:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": f"Language '{language}' is not supported for STT",
+                    "available_languages": list(available_stt_languages.keys()),
+                    "message": "Check /languages/supported for available STT languages"
+                }
+            )
+        
+        # Read audio file
+        audio_bytes = await file.read()
+        file_size = len(audio_bytes)
+        
+        # Check file size (limit to 10MB)
+        max_size = 10 * 1024 * 1024  # 10MB
+        if file_size > max_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File too large. Maximum size: {max_size} bytes"
+            )
+        
+        # Get STT engine
+        stt_engine = STTFactory.get_engine(language)
+        
+        # Create recognizer
+        recognizer = stt_engine.create_recognizer()
+        
+        # Transcribe audio
+        start_time = time.time()
+        result = await stt_engine.recognize_async(audio_bytes, recognizer)
+        
+        # Finalize to get complete result
+        final_result = stt_engine.finalize(recognizer)
+        processing_time = (time.time() - start_time) * 1000
+        
+        # Extract text
+        transcribed_text = final_result.get("text", "")
+        
+        logger.info(
+            "stt_file_transcribed",
+            language=language,
+            filename=file.filename,
+            file_size=file_size,
+            text_length=len(transcribed_text),
+            processing_time_ms=round(processing_time, 2)
+        )
+        
+        # Build response
+        response = {
+            "text": transcribed_text,
+            "language": language,
+            "file_size": file_size,
+            "filename": file.filename,
+            "processing_time_ms": round(processing_time, 2)
+        }
+        
+        # Add confidence if requested
+        if return_confidence:
+            response["confidence"] = final_result.get("confidence", None)
+        
+        return response
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("stt_file_transcription_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"STT file transcription failed: {str(e)}"
+        )
+
+
+@app.post("/stt/transcribe-batch")
+async def transcribe_batch(request: BatchSTTRequest):
+    """Transcribe multiple audio files in batch.
+    
+    Request body:
+        {
+            "audio_files": ["<base64-1>", "<base64-2>", ...],
+            "language": "en",
+            "sample_rate": 16000,
+            "return_confidence": false
+        }
+    
+    Returns:
+        {
+            "transcriptions": [
+                {"text": "transcribed text 1", "confidence": 0.95},
+                {"text": "transcribed text 2", "confidence": 0.92}
+            ],
+            "language": "en",
+            "total": 2,
+            "processing_time_ms": 456.78
+        }
+    """
+    from app.pipeline.stt import STTFactory
+    from app.utils.model_scanner import ModelScanner
+    import time
+    import base64
+    
+    try:
+        # Get available STT languages
+        scanner = ModelScanner()
+        available_stt_languages = scanner.get_available_stt_languages()
+        
+        # Check if language is supported
+        if request.language not in available_stt_languages:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": f"Language '{request.language}' is not supported for STT",
+                    "available_languages": list(available_stt_languages.keys()),
+                    "message": "Check /languages/supported for available STT languages"
+                }
+            )
+        
+        # Get STT engine
+        stt_engine = STTFactory.get_engine(request.language)
+        
+        # Transcribe all audio files
+        start_time = time.time()
+        transcriptions = []
+        
+        for idx, audio_data_b64 in enumerate(request.audio_files):
+            try:
+                # Decode base64 audio data
+                audio_bytes = base64.b64decode(audio_data_b64)
+                
+                # Create recognizer for this audio
+                recognizer = stt_engine.create_recognizer()
+                
+                # Transcribe
+                result = await stt_engine.recognize_async(audio_bytes, recognizer)
+                final_result = stt_engine.finalize(recognizer)
+                
+                # Extract text
+                transcribed_text = final_result.get("text", "")
+                
+                transcription_item = {
+                    "text": transcribed_text,
+                    "index": idx
+                }
+                
+                # Add confidence if requested
+                if request.return_confidence:
+                    transcription_item["confidence"] = final_result.get("confidence", None)
+                
+                transcriptions.append(transcription_item)
+                
+            except Exception as e:
+                logger.error(
+                    "batch_stt_item_failed",
+                    index=idx,
+                    error=str(e),
+                    exc_info=True
+                )
+                transcriptions.append({
+                    "text": "",
+                    "index": idx,
+                    "error": str(e)
+                })
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        logger.info(
+            "stt_batch_transcribed",
+            language=request.language,
+            total=len(transcriptions),
+            processing_time_ms=round(processing_time, 2)
+        )
+        
+        return {
+            "transcriptions": transcriptions,
+            "language": request.language,
+            "total": len(transcriptions),
+            "processing_time_ms": round(processing_time, 2)
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("batch_stt_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Batch STT transcription failed: {str(e)}"
         )
 
 

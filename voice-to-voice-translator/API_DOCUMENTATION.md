@@ -753,7 +753,314 @@ curl -X POST http://localhost:8000/tts/generate \
 
 ---
 
-### 14. System Configuration
+### 14. STT Audio Transcription
+
+Transcribe audio to text using Speech-to-Text engine.
+
+**Endpoint:** `POST /stt/transcribe`
+
+**Authentication:** JWT Token or API Key
+
+**Headers:**
+```
+Content-Type: application/json
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "audio_data": "<base64-encoded audio>",
+  "language": "en",
+  "sample_rate": 16000,
+  "return_confidence": false
+}
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `audio_data` | string | Yes | Base64-encoded audio data (PCM16 or WAV) |
+| `language` | string | Yes | Language code (e.g., 'en', 'hi', 'te') |
+| `sample_rate` | integer | No | Audio sample rate in Hz (default: 16000) |
+| `return_confidence` | boolean | No | Include confidence score (default: false) |
+
+**Response:**
+```json
+{
+  "text": "Hello, how are you today?",
+  "language": "en",
+  "confidence": 0.95,
+  "processing_time_ms": 123.45
+}
+```
+
+**Response Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `text` | string | Transcribed text |
+| `language` | string | Language code used |
+| `confidence` | number | Confidence score (0-1) - if requested |
+| `processing_time_ms` | number | Processing time in milliseconds |
+
+**Status Codes:**
+- `200 OK` - Transcription successful
+- `400 Bad Request` - Invalid audio data or request
+- `401 Unauthorized` - Authentication required
+- `422 Unprocessable Entity` - Unsupported language
+- `500 Internal Server Error` - Transcription failed
+
+**cURL Example:**
+```bash
+# Encode audio file to base64
+AUDIO_BASE64=$(base64 -w 0 audio.wav)
+
+# Send transcription request
+curl -X POST http://localhost:8000/stt/transcribe \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d "{
+    \"audio_data\": \"$AUDIO_BASE64\",
+    \"language\": \"en\",
+    \"return_confidence\": true
+  }"
+```
+
+**Python Example:**
+```python
+import requests
+import base64
+
+# Read and encode audio file
+with open("audio.wav", "rb") as f:
+    audio_base64 = base64.b64encode(f.read()).decode()
+
+# Send request
+response = requests.post(
+    "http://localhost:8000/stt/transcribe",
+    headers={"Authorization": "Bearer <token>"},
+    json={
+        "audio_data": audio_base64,
+        "language": "en",
+        "return_confidence": True
+    }
+)
+
+result = response.json()
+print(f"Transcribed text: {result['text']}")
+```
+
+---
+
+### 15. STT File Upload Transcription
+
+Transcribe an uploaded audio file to text.
+
+**Endpoint:** `POST /stt/transcribe-file`
+
+**Authentication:** JWT Token or API Key
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Request (multipart/form-data):**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | file | Yes | Audio file (WAV, MP3, etc.) |
+| `language` | string | No | Language code (default: "en") |
+| `return_confidence` | boolean | No | Include confidence score (default: false) |
+
+**Response:**
+```json
+{
+  "text": "This is the transcribed text from the audio file",
+  "language": "en",
+  "confidence": 0.92,
+  "file_size": 245760,
+  "filename": "recording.wav",
+  "processing_time_ms": 456.78
+}
+```
+
+**Response Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `text` | string | Transcribed text |
+| `language` | string | Language code used |
+| `confidence` | number | Confidence score - if requested |
+| `file_size` | integer | Size of uploaded file in bytes |
+| `filename` | string | Original filename |
+| `processing_time_ms` | number | Processing time in milliseconds |
+
+**Status Codes:**
+- `200 OK` - Transcription successful
+- `400 Bad Request` - Invalid file or request
+- `401 Unauthorized` - Authentication required
+- `413 Payload Too Large` - File exceeds 10MB limit
+- `422 Unprocessable Entity` - Unsupported language
+- `500 Internal Server Error` - Transcription failed
+
+**cURL Example:**
+```bash
+curl -X POST http://localhost:8000/stt/transcribe-file \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@recording.wav" \
+  -F "language=en" \
+  -F "return_confidence=true"
+```
+
+**Python Example:**
+```python
+import requests
+
+# Upload and transcribe audio file
+with open("recording.wav", "rb") as f:
+    response = requests.post(
+        "http://localhost:8000/stt/transcribe-file",
+        headers={"Authorization": "Bearer <token>"},
+        files={"file": f},
+        data={
+            "language": "en",
+            "return_confidence": True
+        }
+    )
+
+result = response.json()
+print(f"Transcribed: {result['text']}")
+print(f"File size: {result['file_size']} bytes")
+```
+
+---
+
+### 16. Batch STT Transcription
+
+Transcribe multiple audio files in a single request.
+
+**Endpoint:** `POST /stt/transcribe-batch`
+
+**Authentication:** JWT Token or API Key
+
+**Headers:**
+```
+Content-Type: application/json
+Authorization: Bearer <token>
+```
+
+**Request Body:**
+```json
+{
+  "audio_files": [
+    "<base64-encoded-audio-1>",
+    "<base64-encoded-audio-2>",
+    "<base64-encoded-audio-3>"
+  ],
+  "language": "en",
+  "sample_rate": 16000,
+  "return_confidence": false
+}
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `audio_files` | array | Yes | Array of base64-encoded audio data (max 50) |
+| `language` | string | Yes | Language code for all audio files |
+| `sample_rate` | integer | No | Audio sample rate in Hz (default: 16000) |
+| `return_confidence` | boolean | No | Include confidence scores (default: false) |
+
+**Response:**
+```json
+{
+  "transcriptions": [
+    {
+      "text": "First audio transcription",
+      "index": 0,
+      "confidence": 0.95
+    },
+    {
+      "text": "Second audio transcription",
+      "index": 1,
+      "confidence": 0.88
+    },
+    {
+      "text": "",
+      "index": 2,
+      "error": "Audio processing failed"
+    }
+  ],
+  "language": "en",
+  "total": 3,
+  "processing_time_ms": 890.12
+}
+```
+
+**Response Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `transcriptions` | array | Array of transcription results |
+| `transcriptions[].text` | string | Transcribed text |
+| `transcriptions[].index` | integer | Index in original request |
+| `transcriptions[].confidence` | number | Confidence score - if requested |
+| `transcriptions[].error` | string | Error message if transcription failed |
+| `language` | string | Language code used |
+| `total` | integer | Total number of transcriptions |
+| `processing_time_ms` | number | Total processing time in milliseconds |
+
+**Status Codes:**
+- `200 OK` - Batch transcription completed (check individual results for errors)
+- `400 Bad Request` - Invalid request
+- `401 Unauthorized` - Authentication required
+- `422 Unprocessable Entity` - Unsupported language
+- `500 Internal Server Error` - Batch processing failed
+
+**cURL Example:**
+```bash
+curl -X POST http://localhost:8000/stt/transcribe-batch \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "audio_files": [
+      "'$(base64 -w 0 audio1.wav)'",
+      "'$(base64 -w 0 audio2.wav)'"
+    ],
+    "language": "en",
+    "return_confidence": true
+  }'
+```
+
+**Python Example:**
+```python
+import requests
+import base64
+
+# Encode multiple audio files
+audio_files = []
+for filename in ["audio1.wav", "audio2.wav", "audio3.wav"]:
+    with open(filename, "rb") as f:
+        audio_files.append(base64.b64encode(f.read()).decode())
+
+# Send batch request
+response = requests.post(
+    "http://localhost:8000/stt/transcribe-batch",
+    headers={"Authorization": "Bearer <token>"},
+    json={
+        "audio_files": audio_files,
+        "language": "en",
+        "return_confidence": True
+    }
+)
+
+result = response.json()
+print(f"Processed {result['total']} audio files")
+for t in result['transcriptions']:
+    print(f"[{t['index']}] {t['text']}")
+```
+
+---
+
+### 17. System Configuration
 
 Get current system configuration (Admin only).
 

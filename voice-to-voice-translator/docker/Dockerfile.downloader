@@ -8,17 +8,24 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install system dependencies for unzipping
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies with cache mount
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install packages with cache mount AND cleanup in same layer to save space
+# Upgrade pip first (separate layer for caching)
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip && \
-    pip install aiohttp tqdm argostranslate && \
-    find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    pip install --upgrade pip
+
+# Install Python packages (separate layer for better caching)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install aiohttp tqdm argostranslate
+
+# Cleanup in final layer
+RUN find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
     find /usr/local/lib/python3.11 -type f -name "*.pyc" -delete && \
     rm -rf /tmp/*
 
