@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package voice_translator;
+
+// ==============================================================================
+// STT Service - Speech-to-Text
+// ==============================================================================
+
+service STTService {
+  // Stream audio chunks and get streaming recognition results
+  rpc RecognizeStream(stream AudioChunk) returns (stream RecognitionResult);
+  
+  // Single audio processing (for complete utterances)
+  rpc RecognizeAudio(AudioRequest) returns (RecognitionResponse);
+  
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message AudioChunk {
+  bytes audio_data = 1;          // PCM16 audio bytes
+  string user_id = 2;            // User identifier
+  string language = 3;           // Language code (e.g., "en", "hi")
+  bool is_final = 4;             // Last chunk of utterance
+  int32 sample_rate = 5;         // Audio sample rate (default: 16000)
+}
+
+message RecognitionResult {
+  string text = 1;               // Recognized text
+  bool is_partial = 2;           // Partial or final result
+  float confidence = 3;          // Confidence score (0.0 - 1.0)
+  string language = 4;           // Detected language
+  string user_id = 5;            // User identifier
+}
+
+message AudioRequest {
+  bytes audio_data = 1;
+  string language = 2;
+  string user_id = 3;
+  int32 sample_rate = 4;
+}
+
+message RecognitionResponse {
+  string text = 1;
+  float confidence = 2;
+  string language = 3;
+  int64 processing_time_ms = 4;
+}
+
+// ==============================================================================
+// Translation Service - Text Translation
+// ==============================================================================
+
+service TranslationService {
+  // Translate single text
+  rpc Translate(TranslationRequest) returns (TranslationResponse);
+  
+  // Stream translations (for continuous conversation)
+  rpc TranslateStream(stream TranslationRequest) returns (stream TranslationResponse);
+  
+  // Get supported language pairs
+  rpc GetSupportedLanguages(LanguageRequest) returns (LanguageResponse);
+  
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message TranslationRequest {
+  string text = 1;               // Text to translate
+  string source_lang = 2;        // Source language code
+  string target_lang = 3;        // Target language code
+  string user_id = 4;            // User identifier
+  string task_id = 5;            // Task identifier for tracking
+}
+
+message TranslationResponse {
+  string original_text = 1;      // Original text
+  string translated_text = 2;    // Translated text
+  string source_lang = 3;        // Source language
+  string target_lang = 4;        // Target language
+  float confidence = 5;          // Translation confidence (if available)
+  int64 processing_time_ms = 6;  // Processing time in milliseconds
+  string task_id = 7;            // Task identifier
+}
+
+message LanguageRequest {
+  // Empty for now, can add filters later
+}
+
+message LanguageResponse {
+  repeated LanguagePair supported_pairs = 1;
+}
+
+message LanguagePair {
+  string source_lang = 1;
+  string target_lang = 2;
+}
+
+// ==============================================================================
+// TTS Service - Text-to-Speech
+// ==============================================================================
+
+service TTSService {
+  // Synthesize text to audio
+  rpc Synthesize(TTSRequest) returns (TTSResponse);
+  
+  // Stream synthesis (for long texts, returns audio chunks)
+  rpc SynthesizeStream(TTSRequest) returns (stream AudioChunk);
+  
+  // Get available voices
+  rpc GetVoices(VoiceRequest) returns (VoiceResponse);
+  
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message TTSRequest {
+  string text = 1;               // Text to synthesize
+  string language = 2;           // Language code
+  string user_id = 3;            // User identifier
+  string task_id = 4;            // Task identifier
+  string voice_id = 5;           // Optional specific voice
+  float speed = 6;               // Speech speed (default: 1.0)
+  int32 sample_rate = 7;         // Desired sample rate (default: 16000)
+}
+
+message TTSResponse {
+  bytes audio_data = 1;          // Synthesized audio (WAV or PCM)
+  string language = 2;           // Language used
+  int64 processing_time_ms = 3;  // Processing time
+  string task_id = 4;            // Task identifier
+  int32 sample_rate = 5;         // Audio sample rate
+  int32 audio_length_ms = 6;     // Audio duration
+}
+
+message VoiceRequest {
+  string language = 1;           // Filter by language (optional)
+}
+
+message VoiceResponse {
+  repeated Voice voices = 1;
+}
+
+message Voice {
+  string voice_id = 1;
+  string name = 2;
+  string language = 3;
+  string gender = 4;
+}
+
+// ==============================================================================
+// Common Messages
+// ==============================================================================
+
+message HealthCheckRequest {
+  string service = 1;            // Optional service name
+}
+
+message HealthCheckResponse {
+  bool healthy = 1;
+  string status = 2;             // "ok", "degraded", "unhealthy"
+  string message = 3;            // Additional info
+  int64 uptime_seconds = 4;      // Service uptime
+  repeated string loaded_models = 5;  // Loaded model names
+}
+
+// ==============================================================================
+// Error Handling
+// ==============================================================================
+
+message Error {
+  string code = 1;               // Error code (e.g., "INVALID_LANGUAGE")
+  string message = 2;            // Human-readable error message
+  string details = 3;            // Additional error details
+}
