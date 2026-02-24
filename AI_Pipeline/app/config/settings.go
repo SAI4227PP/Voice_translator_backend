@@ -104,7 +104,6 @@ type Settings struct {
 
 	WSPingInterval int
 	WSPingTimeout  int
-	GRPCEnabled    bool
 	GRPCPort       int
 }
 
@@ -203,7 +202,6 @@ func LoadSettings() Settings {
 
 		WSPingInterval: envInt("WS_PING_INTERVAL", 30),
 		WSPingTimeout:  envInt("WS_PING_TIMEOUT", 10),
-		GRPCEnabled:    envBool("GRPC_ENABLED", false),
 		GRPCPort:       envInt("GRPC_PORT", 50051),
 	}
 

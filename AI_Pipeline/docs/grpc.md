@@ -92,6 +92,41 @@ Linux/macOS:
 ./scripts/gen_go_proto.sh
 ```
 
+## Translation + TTS Migration (HTTP -> gRPC)
+
+Use this when your immediate focus is Translation and TTS only.
+
+### Endpoint Mapping
+
+- HTTP `POST /translate` -> gRPC `TranslationService.Translate`
+- HTTP `POST /translate/batch` -> gRPC `TranslationService.TranslateStream` (or repeated `Translate` calls)
+- HTTP `POST /tts/generate` -> gRPC `TTSService.Synthesize`
+- Real-time playback path -> gRPC `TTSService.SynthesizeStream`
+- HTTP `POST /translate-tts` -> client orchestrates:
+  1. `TranslationService.Translate`
+  2. `TTSService.Synthesize` or `TTSService.SynthesizeStream`
+
+### Recommended Rollout Order
+
+1. Migrate `/translate` clients to `TranslationService.Translate`.
+2. Migrate `/tts/generate` clients to `TTSService.Synthesize`.
+3. For real-time audio delivery, switch to `TTSService.SynthesizeStream`.
+4. Replace `/translate-tts` with client-side orchestration across Translation + TTS gRPC calls.
+5. Keep HTTP endpoints as fallback until p95 latency and error rate are stable.
+
+### Expected Impact
+
+- Transport overhead usually improves due to protobuf + binary framing.
+- TTS streaming UX improves with `SynthesizeStream` chunk delivery.
+- CPU and latency gains are usually small-to-moderate, not dramatic, because synthesis/inference runtime is still the dominant cost.
+- Translation/TTS benefit more than current STT path because these workers are already long-lived daemons.
+
+### What Not to Expect
+
+- gRPC alone does not reduce model inference time.
+- gRPC alone does not fix queue contention or daemon saturation.
+- If p95 remains high, tune daemon worker/thread/queue settings before deeper architecture changes.
+
 ## Key Points
 
 1. gRPC is already production-wired in integrated mode.

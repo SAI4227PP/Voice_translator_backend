@@ -42,7 +42,7 @@ WebSocket endpoint:
 
 - `ws://localhost:8000/ws` (or configured `HOST`/`PORT`)
 
-Optional gRPC endpoint:
+gRPC endpoint:
 
-- Enable with `GRPC_ENABLED=true`
-- Port via `GRPC_PORT` (default `50051`)
+- gRPC server starts with the Go server.
+- Port via `GRPC_PORT` (default `50051`).

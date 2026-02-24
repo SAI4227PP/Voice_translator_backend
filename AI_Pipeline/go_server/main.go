@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,9 +20,12 @@ import (
 	utils "voice_translator_go_server/app/utils"
 	workers "voice_translator_go_server/app/workers"
 	"voice_translator_go_server/grpcserver"
+	pb "voice_translator_go_server/proto"
 	"voice_translator_go_server/server"
 
 	"github.com/gorilla/websocket"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type TranslateRequest struct {
@@ -71,6 +76,9 @@ type appState struct {
 	translator *workers.SarvamTranslator
 	tts        *workers.SvaraTTS
 	stt        *workers.PythonSTTBridge
+	grpcConn   *grpc.ClientConn
+	translationGRPC pb.TranslationServiceClient
+	ttsGRPC    pb.TTSServiceClient
 	chunkBuf   map[string]string
 	chunkMu    sync.Mutex
 }
@@ -100,21 +108,24 @@ func main() {
 	defer state.translator.Close()
 	defer state.tts.Close()
 
-	if settings.GRPCEnabled {
-		grpcAddr := settings.Host + ":" + strconv.Itoa(settings.GRPCPort)
-		stopGRPC, err := grpcserver.Start(grpcAddr, grpcserver.Dependencies{
-			Settings:   settings,
-			Scanner:    state.scanner,
-			Translator: state.translator,
-			TTS:        state.tts,
-			STT:        state.stt,
-		})
-		if err != nil {
-			log.Printf("grpc_server_start_failed addr=%s error=%v", grpcAddr, err)
-		} else {
-			defer stopGRPC()
-		}
+	grpcAddr := settings.Host + ":" + strconv.Itoa(settings.GRPCPort)
+	stopGRPC, err := grpcserver.Start(grpcAddr, grpcserver.Dependencies{
+		Settings:   settings,
+		Scanner:    state.scanner,
+		Translator: state.translator,
+		TTS:        state.tts,
+		STT:        state.stt,
+	})
+	if err != nil {
+		log.Fatalf("grpc_server_start_failed addr=%s error=%v", grpcAddr, err)
 	}
+	defer stopGRPC()
+
+	if err := state.initInternalGRPCClients(); err != nil {
+		log.Fatalf("http_grpc_bridge_init_failed error=%v", err)
+	}
+	log.Printf("http_grpc_bridge_enabled target=%s", state.internalGRPCAddress())
+	defer state.closeInternalGRPCClients()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", state.rootHandler)
@@ -363,7 +374,7 @@ func (a *appState) translateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	out, err := a.translator.Translate(req.Text, req.SourceLanguage, req.TargetLanguage)
+	out, err := a.translateText(req.Text, req.SourceLanguage, req.TargetLanguage)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Translation failed: "+err.Error())
 		return
@@ -397,7 +408,7 @@ func (a *appState) batchTranslateHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	start := time.Now()
-	translations, err := a.translator.BatchTranslate(req.Texts, req.SourceLanguage, req.TargetLanguage)
+	translations, err := a.batchTranslateTexts(req.Texts, req.SourceLanguage, req.TargetLanguage)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Batch translation failed: "+err.Error())
 		return
@@ -442,7 +453,23 @@ func (a *appState) ttsGenerateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	audio, err := a.tts.Synthesize(req.Language, req.Text)
+	streamResp := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("stream")), "true")
+	if streamResp {
+		w.Header().Set("Content-Type", "audio/wav")
+		w.Header().Set("Content-Disposition", `attachment; filename="tts_output.wav"`)
+		w.Header().Set("X-Stream-Mode", "grpc_synthesize_stream")
+		wrote, sErr := a.streamSynthesizeAudioToHTTP(w, req.Language, req.Text)
+		if sErr != nil {
+			if wrote {
+				log.Printf("tts_stream_write_error error=%v", sErr)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "TTS stream failed: "+sErr.Error())
+		}
+		return
+	}
+
+	audio, err := a.synthesizeAudio(req.Language, req.Text)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "TTS generation failed: "+err.Error())
 		return
@@ -499,6 +526,7 @@ func (a *appState) translateTTSHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
+	streamResp := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("stream")), "true")
 	inputText := req.Text
 	if mode == "chunk" {
 		inputText = a.mergeChunkContext(req.StreamID, req.Text)
@@ -507,12 +535,27 @@ func (a *appState) translateTTSHandler(w http.ResponseWriter, r *http.Request) {
 		delete(a.chunkBuf, req.StreamID)
 		a.chunkMu.Unlock()
 	}
-	translated, err := a.translator.Translate(inputText, req.SourceLanguage, req.TargetLanguage)
+	translated, err := a.translateText(inputText, req.SourceLanguage, req.TargetLanguage)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Translate-TTS pipeline failed: "+err.Error())
 		return
 	}
-	audio, err := a.tts.Synthesize(req.TargetLanguage, translated)
+	if streamResp {
+		w.Header().Set("Content-Type", "audio/wav")
+		w.Header().Set("Content-Disposition", `attachment; filename="translate_tts_output.wav"`)
+		w.Header().Set("X-Pipeline-Mode", mode)
+		w.Header().Set("X-Stream-Mode", "grpc_synthesize_stream")
+		wrote, sErr := a.streamSynthesizeAudioToHTTP(w, req.TargetLanguage, translated)
+		if sErr != nil {
+			if wrote {
+				log.Printf("translate_tts_stream_write_error error=%v", sErr)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "Translate-TTS stream failed: "+sErr.Error())
+		}
+		return
+	}
+	audio, err := a.synthesizeAudio(req.TargetLanguage, translated)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Translate-TTS pipeline failed: "+err.Error())
 		return
@@ -745,6 +788,169 @@ func base64Decode(data string) ([]byte, error) {
 
 func readAllLimited(file multipart.File, max int64) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(file, max))
+}
+
+func (a *appState) internalGRPCAddress() string {
+	host := strings.TrimSpace(a.settings.Host)
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(a.settings.GRPCPort))
+}
+
+func (a *appState) initInternalGRPCClients() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(
+		ctx,
+		a.internalGRPCAddress(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		return err
+	}
+	a.grpcConn = conn
+	a.translationGRPC = pb.NewTranslationServiceClient(conn)
+	a.ttsGRPC = pb.NewTTSServiceClient(conn)
+	return nil
+}
+
+func (a *appState) closeInternalGRPCClients() {
+	if a.grpcConn != nil {
+		_ = a.grpcConn.Close()
+		a.grpcConn = nil
+	}
+}
+
+func (a *appState) translateText(text, source, target string) (string, error) {
+	if a.translationGRPC == nil {
+		return "", io.ErrClosedPipe
+	}
+
+	timeoutSec := a.settings.SarvamTimeout
+	if timeoutSec <= 0 {
+		timeoutSec = 120
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+
+	resp, err := a.translationGRPC.Translate(ctx, &pb.TranslationRequest{
+		Text:       text,
+		SourceLang: source,
+		TargetLang: target,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.GetTranslatedText(), nil
+}
+
+func (a *appState) batchTranslateTexts(texts []string, source, target string) ([]string, error) {
+	if a.translationGRPC == nil {
+		return nil, io.ErrClosedPipe
+	}
+
+	timeoutSec := a.settings.SarvamTimeout
+	if timeoutSec <= 0 {
+		timeoutSec = 120
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+
+	stream, err := a.translationGRPC.TranslateStream(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]string, 0, len(texts))
+	for _, text := range texts {
+		if err = stream.Send(&pb.TranslationRequest{
+			Text:       text,
+			SourceLang: source,
+			TargetLang: target,
+		}); err != nil {
+			return nil, err
+		}
+		resp, recvErr := stream.Recv()
+		if recvErr != nil {
+			return nil, recvErr
+		}
+		out = append(out, resp.GetTranslatedText())
+	}
+	_ = stream.CloseSend()
+	return out, nil
+}
+
+func (a *appState) synthesizeAudio(language, text string) ([]byte, error) {
+	if a.ttsGRPC == nil {
+		return nil, io.ErrClosedPipe
+	}
+
+	timeoutSec := a.settings.SvaraTimeoutSeconds
+	if timeoutSec <= 0 {
+		timeoutSec = 90
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+
+	resp, err := a.ttsGRPC.Synthesize(ctx, &pb.TTSRequest{
+		Text:       text,
+		Language:   language,
+		Format:     "wav",
+		SampleRate: int32(a.settings.AudioSampleRate),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetAudioData(), nil
+}
+
+func (a *appState) streamSynthesizeAudioToHTTP(w http.ResponseWriter, language, text string) (bool, error) {
+	if a.ttsGRPC == nil {
+		return false, io.ErrClosedPipe
+	}
+
+	timeoutSec := a.settings.SvaraTimeoutSeconds
+	if timeoutSec <= 0 {
+		timeoutSec = 90
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+
+	stream, err := a.ttsGRPC.SynthesizeStream(ctx, &pb.TTSRequest{
+		Text:       text,
+		Language:   language,
+		Format:     "wav",
+		SampleRate: int32(a.settings.AudioSampleRate),
+	})
+	if err != nil {
+		return false, err
+	}
+
+	flusher, _ := w.(http.Flusher)
+	wrote := false
+	for {
+		chunk, recvErr := stream.Recv()
+		if recvErr == io.EOF {
+			return wrote, nil
+		}
+		if recvErr != nil {
+			return wrote, recvErr
+		}
+		payload := chunk.GetAudioData()
+		if len(payload) == 0 {
+			continue
+		}
+		if _, err = w.Write(payload); err != nil {
+			return wrote, err
+		}
+		wrote = true
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
 }
 
 func toWorkerSettings(s config.Settings) workers.Settings {

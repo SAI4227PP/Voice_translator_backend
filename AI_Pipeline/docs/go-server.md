@@ -8,7 +8,7 @@ The server provides:
 
 - HTTP APIs
 - WebSocket endpoint and room routing
-- Optional gRPC services
+- gRPC services
 - Shared worker orchestration (STT/Translation/TTS)
 - Unified startup, warm-start, and runtime health checks
 
@@ -29,7 +29,7 @@ The server provides:
 |  +----------------------+                    |
 |                                              |
 |  +----------------------+                    |
-|  | Optional gRPC Server |                    |
+|  | gRPC Server          |                    |
 |  +----------------------+                    |
 |                                              |
 |  +----------------------+                    |
@@ -76,7 +76,7 @@ HTTP/WS/gRPC request
 2. Initialize scanner, room manager, and workers.
 3. Register WS router.
 4. Run warm-start for STT/Translation/TTS.
-5. Start gRPC server if enabled.
+5. Start gRPC server.
 6. Start HTTP server.
 
 Technical behavior:
@@ -104,7 +104,7 @@ WebSocket:
 
 gRPC:
 
-- Enabled by `GRPC_ENABLED=true`
+- Starts with the Go server.
 - Port from `GRPC_PORT`
 
 ## Runtime Stats and Health

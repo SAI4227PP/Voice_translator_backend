@@ -1,6 +1,6 @@
 # Voice-to-Voice Translator
 
-Real-time voice translation backend with a Go API layer, C++ translation/TTS daemons, Python STT bridge, WebSocket rooms, and optional gRPC services.
+Real-time voice translation backend with a Go API layer, C++ translation/TTS daemons, Python STT bridge, WebSocket rooms, and gRPC services.
 
 ## Current Stack
 
@@ -36,7 +36,7 @@ Default endpoints:
 
 - HTTP: `http://localhost:7860`
 - WebSocket: `ws://localhost:7860/ws`
-- gRPC: `localhost:50051` (enabled in compose)
+- gRPC: `localhost:50051`
 
 ## Quick Start (Local Development)
 
@@ -107,7 +107,6 @@ Services:
 
 Environment flags:
 
-- `GRPC_ENABLED` (default `false`)
 - `GRPC_PORT` (default `50051`)
 
 ## Project Structure

@@ -12,7 +12,7 @@ Default local base URLs:
 
 - HTTP: `http://localhost:8000`
 - WebSocket: `ws://localhost:8000/ws`
-- gRPC: `localhost:50052` (when `GRPC_ENABLED=true`)
+- gRPC: `localhost:50051`
 
 ## HTTP API
 
