@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import inspect
 from pathlib import Path
 
 import torch
@@ -74,13 +75,15 @@ def export_onnx(model_id: str, output: Path, opset: int = 17) -> None:
         def __init__(self, inner):
             super().__init__()
             self.inner = inner
+            self._allowed = set(inspect.signature(inner.forward).parameters.keys())
 
         def forward(self, input_ids, attention_mask):
-            out = self.inner(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                use_cache=False,
-            )
+            kwargs = {}
+            if "input_ids" in self._allowed:
+                kwargs["input_ids"] = input_ids
+            if "attention_mask" in self._allowed:
+                kwargs["attention_mask"] = attention_mask
+            out = self.inner(**kwargs)
             if hasattr(out, "last_hidden_state"):
                 return out.last_hidden_state
             if isinstance(out, (tuple, list)) and len(out) > 0:
