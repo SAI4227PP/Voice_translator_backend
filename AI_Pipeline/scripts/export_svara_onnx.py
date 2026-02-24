@@ -63,12 +63,37 @@ def export_onnx(model_id: str, output: Path, opset: int = 17) -> None:
     encoded = tokenizer(sample_text, return_tensors="pt")
     input_ids = encoded["input_ids"]
     attention_mask = encoded.get("attention_mask", torch.ones_like(input_ids))
+    if hasattr(model, "config"):
+        # Avoid cache-related signature/graph issues during export.
+        try:
+            model.config.use_cache = False
+        except Exception:
+            pass
+
+    class _OnnxWrapper(torch.nn.Module):
+        def __init__(self, inner):
+            super().__init__()
+            self.inner = inner
+
+        def forward(self, input_ids, attention_mask):
+            out = self.inner(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                use_cache=False,
+            )
+            if hasattr(out, "last_hidden_state"):
+                return out.last_hidden_state
+            if isinstance(out, (tuple, list)) and len(out) > 0:
+                return out[0]
+            return out
+
+    wrapper = _OnnxWrapper(model).eval()
 
     output.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Exporting ONNX to: {output}")
     torch.onnx.export(
-        model,
+        wrapper,
         (input_ids, attention_mask),
         str(output),
         input_names=["input_ids", "attention_mask"],
