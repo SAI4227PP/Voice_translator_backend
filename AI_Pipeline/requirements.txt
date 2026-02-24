@@ -1,9 +1,5 @@
-# Runtime deps used by current Python modules/scripts
-numpy==1.24.3
-vosk==0.3.45
-aiohttp==3.9.1
-tqdm==4.66.1
-PyJWT==2.8.0
+# Base runtime deps
+-r requirements.runtime.txt
 
 # Model export tooling (scripts/export_svara_onnx.py)
 torch==2.2.2
