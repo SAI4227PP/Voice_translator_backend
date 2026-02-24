@@ -19,10 +19,8 @@ services:
       args:
         - HF_TOKEN=${HF_TOKEN:-}
         - SARVAM_HF_MODEL_ID=${SARVAM_HF_MODEL_ID:-sarvamai/sarvam-1}
-        - SVARA_TTS_HF_MODEL_ID=${SVARA_TTS_HF_MODEL_ID:-kenpath/svara-tts-v1}
         - SVARA_TTS_GGUF_HF_REPO=${SVARA_TTS_GGUF_HF_REPO:-mradermacher/svara-tts-v1-GGUF}
         - SVARA_TTS_GGUF_FILE=${SVARA_TTS_GGUF_FILE:-svara-tts-v1.Q5_K_M.gguf}
-        - ENABLE_TTS_ONNX_EXPORT=${ENABLE_TTS_ONNX_EXPORT:-false}
     container_name: voice-translator-app
     ports:
       - "7860:7860"
@@ -68,11 +66,7 @@ services:
       - SVARA_TTS_MODEL_ID=/app/llm-models/${SVARA_TTS_GGUF_FILE:-svara-tts-v1.Q5_K_M.gguf}
       - SVARA_TTS_ONNX_MODEL_PATH=
       - SVARA_TTS_TOKENIZER_ID=kenpath/svara-tts-v1
-      - SVARA_TTS_ONNX_THREADS=1
-      - SVARA_TTS_ONNX_SAMPLE_RATE=24000
       - TTS_DAEMON_WORKERS=2
-      - ONNX_THREADS=1
-      - ONNX_SAMPLE_RATE=24000
       - SVARA_TTS_API_BASE_URL=
       - SVARA_TTS_API_KEY=
       - SVARA_TTS_TIMEOUT_SECONDS=90

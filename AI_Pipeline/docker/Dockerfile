@@ -110,10 +110,8 @@ FROM build-base AS model-build
 WORKDIR /work
 
 ARG SARVAM_HF_MODEL_ID=sarvamai/sarvam-1
-ARG SVARA_TTS_HF_MODEL_ID=kenpath/svara-tts-v1
 ARG SVARA_TTS_GGUF_HF_REPO=mradermacher/svara-tts-v1-GGUF
 ARG SVARA_TTS_GGUF_FILE=svara-tts-v1.Q5_K_M.gguf
-ARG ENABLE_TTS_ONNX_EXPORT=false
 ARG HF_TOKEN
 
 COPY --from=llama-build /work/llama.cpp /work/llama.cpp
@@ -131,22 +129,17 @@ RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
       torch==2.6.0 && \
     pip install --upgrade --force-reinstall \
       transformers==4.55.4 \
-      onnxruntime==1.18.1 \
       numpy==1.24.3
 
 RUN python3 - <<'PY'
-import torch, transformers, onnxruntime, numpy
+import torch, transformers, numpy
 print("torch", torch.__version__)
 print("transformers", transformers.__version__)
-print("onnxruntime", onnxruntime.__version__)
 print("numpy", numpy.__version__)
 assert transformers.__version__ == "4.55.4", f"unexpected transformers version: {transformers.__version__}"
 assert torch.__version__.startswith("2.6.0"), f"unexpected torch version: {torch.__version__}"
-assert onnxruntime.__version__ == "1.18.1", f"unexpected onnxruntime version: {onnxruntime.__version__}"
 assert numpy.__version__ == "1.24.3", f"unexpected numpy version: {numpy.__version__}"
 PY
-
-COPY scripts/export_svara_onnx.py /work/export_svara_onnx.py
 
 RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
     --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
@@ -205,22 +198,12 @@ RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
     fi && \
     cp "/work/model-cache/${SVARA_TTS_GGUF_FILE}" "/work/llm-models/${SVARA_TTS_GGUF_FILE}"
 
-RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
-    --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
-    mkdir -p /work/tts-models /work/model-cache && \
-    if [ "${ENABLE_TTS_ONNX_EXPORT}" != "true" ]; then \
-      echo "Skipping TTS ONNX export (ENABLE_TTS_ONNX_EXPORT=${ENABLE_TTS_ONNX_EXPORT})"; \
-      :; \
-    elif [ -f /work/model-cache/svara_tts.onnx ]; then \
-      echo "Using cached ONNX artifact"; \
-      cp /work/model-cache/svara_tts.onnx /work/tts-models/svara_tts.onnx; \
-    else \
-      python3 /work/export_svara_onnx.py \
-        --model-id "${SVARA_TTS_HF_MODEL_ID}" \
-        --output /work/tts-models/svara_tts.onnx \
-        --opset 17 && \
-      cp /work/tts-models/svara_tts.onnx /work/model-cache/svara_tts.onnx; \
-    fi
+RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
+    set -eu; \
+    if [ ! -f "/work/llm-models/${SVARA_TTS_GGUF_FILE}" ]; then \
+      echo "ERROR: expected local Svara GGUF model not found: /work/llm-models/${SVARA_TTS_GGUF_FILE}" && exit 1; \
+    fi; \
+    echo "Using local Svara GGUF model: /work/llm-models/${SVARA_TTS_GGUF_FILE}"
 
 # -------------------------------
 # C++ engine builds
@@ -307,7 +290,6 @@ COPY --from=llama-build /work/llama-runtime/bin/ /app/llama.cpp/bin/
 
 # Copy prebuilt model artifacts only
 COPY --from=model-build /work/llm-models/ /app/llm-models/
-COPY --from=model-build /work/tts-models/ /app/tts-models/
 
 # Copy compiled C++ daemons only
 COPY --from=cpp-build /app/app/pipeline/translate/translate_engine /app/app/pipeline/translate/translate_engine
@@ -345,11 +327,7 @@ ENV HOST=0.0.0.0 \
     SVARA_TTS_MODEL_ID=/app/llm-models/svara-tts-v1.Q5_K_M.gguf \
     SVARA_TTS_ONNX_MODEL_PATH= \
     SVARA_TTS_TOKENIZER_ID=kenpath/svara-tts-v1 \
-    SVARA_TTS_ONNX_THREADS=1 \
-    SVARA_TTS_ONNX_SAMPLE_RATE=24000 \
     TTS_DAEMON_WORKERS=2 \
-    ONNX_THREADS=1 \
-    ONNX_SAMPLE_RATE=24000 \
     SVARA_TTS_API_BASE_URL= \
     SVARA_TTS_API_KEY= \
     SVARA_TTS_TIMEOUT_SECONDS=90 \
