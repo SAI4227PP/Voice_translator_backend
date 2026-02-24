@@ -412,6 +412,13 @@ func (s *Service) validateTTSRequest(req *pb.TTSRequest) error {
 	if _, ok := langs[lang]; !ok {
 		return status.Errorf(codes.InvalidArgument, "unsupported TTS language: %s", lang)
 	}
+	format := strings.ToLower(strings.TrimSpace(req.GetFormat()))
+	if format == "" {
+		format = "wav"
+	}
+	if format != "wav" {
+		return status.Errorf(codes.InvalidArgument, "unsupported format: %s", format)
+	}
 	return nil
 }
 

@@ -898,8 +898,8 @@ func (a *appState) synthesizeAudio(language, text string) ([]byte, error) {
 	resp, err := a.ttsGRPC.Synthesize(ctx, &pb.TTSRequest{
 		Text:       text,
 		Language:   language,
-		Format:     "wav",
 		SampleRate: int32(a.settings.AudioSampleRate),
+		Format:     "wav",
 	})
 	if err != nil {
 		return nil, err
@@ -922,8 +922,8 @@ func (a *appState) streamSynthesizeAudioToHTTP(w http.ResponseWriter, language, 
 	stream, err := a.ttsGRPC.SynthesizeStream(ctx, &pb.TTSRequest{
 		Text:       text,
 		Language:   language,
-		Format:     "wav",
 		SampleRate: int32(a.settings.AudioSampleRate),
+		Format:     "wav",
 	})
 	if err != nil {
 		return false, err
