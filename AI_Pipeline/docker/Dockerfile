@@ -116,46 +116,66 @@ ARG HF_TOKEN
 COPY --from=llama-build /work/llama.cpp /work/llama.cpp
 COPY scripts/export_svara_onnx.py /work/export_svara_onnx.py
 
-RUN --mount=type=cache,target=/root/.cache/pip \
+RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
     pip install huggingface_hub && \
     if [ -f /work/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt ]; then \
       pip install -r /work/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt; \
     fi
 
-RUN --mount=type=cache,target=/root/.cache/pip \
+RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
     pip install torch transformers onnxruntime numpy
 
-RUN --mount=type=cache,target=/root/.cache/huggingface \
-    python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${SARVAM_HF_MODEL_ID}', local_dir='/work/sarvam-1', token='${HF_TOKEN}' if '${HF_TOKEN}' else None, local_dir_use_symlinks=False)"
+RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
+    --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
+    mkdir -p /work/model-cache/sarvam-1 && \
+    python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${SARVAM_HF_MODEL_ID}', local_dir='/work/model-cache/sarvam-1', token='${HF_TOKEN}' if '${HF_TOKEN}' else None, local_dir_use_symlinks=False)" && \
+    rm -rf /work/sarvam-1 && cp -a /work/model-cache/sarvam-1 /work/sarvam-1
 
-RUN mkdir -p /work/llm-models && \
-    if [ -f /work/llama.cpp/convert-hf-to-gguf.py ]; then \
-      python3 /work/llama.cpp/convert-hf-to-gguf.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-f16.gguf --outtype f16; \
-    elif [ -f /work/llama.cpp/convert_hf_to_gguf.py ]; then \
-      python3 /work/llama.cpp/convert_hf_to_gguf.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-f16.gguf --outtype f16; \
-    elif [ -f /work/llama.cpp/convert.py ]; then \
-      python3 /work/llama.cpp/convert.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-f16.gguf --outtype f16; \
+RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
+    mkdir -p /work/llm-models /work/model-cache && \
+    if [ -f /work/model-cache/sarvam-1-q4.gguf ] && [ -f /work/model-cache/sarvam-1.gguf ]; then \
+      echo "Using cached GGUF artifacts"; \
+      cp /work/model-cache/sarvam-1.gguf /work/llm-models/sarvam-1.gguf; \
+      cp /work/model-cache/sarvam-1-q4.gguf /work/llm-models/sarvam-1-q4.gguf; \
     else \
-      echo "ERROR: could not find llama.cpp HF->GGUF conversion script" && exit 1; \
-    fi && \
-    cp /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1.gguf && \
-    if [ -x /work/llama.cpp/build/bin/llama-quantize ]; then \
-      /work/llama.cpp/build/bin/llama-quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
-    elif [ -x /work/llama.cpp/bin/llama-quantize ]; then \
-      /work/llama.cpp/bin/llama-quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
-    elif [ -x /work/llama.cpp/build/bin/quantize ]; then \
-      /work/llama.cpp/build/bin/quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
-    elif [ -x /work/llama.cpp/bin/quantize ]; then \
-      /work/llama.cpp/bin/quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
-    else \
-      echo "ERROR: llama-quantize/quantize binary not found; cannot create q4 model" && exit 1; \
+      if [ -f /work/llama.cpp/convert-hf-to-gguf.py ]; then \
+        python3 /work/llama.cpp/convert-hf-to-gguf.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-f16.gguf --outtype f16; \
+      elif [ -f /work/llama.cpp/convert_hf_to_gguf.py ]; then \
+        python3 /work/llama.cpp/convert_hf_to_gguf.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-f16.gguf --outtype f16; \
+      elif [ -f /work/llama.cpp/convert.py ]; then \
+        python3 /work/llama.cpp/convert.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-f16.gguf --outtype f16; \
+      else \
+        echo "ERROR: could not find llama.cpp HF->GGUF conversion script" && exit 1; \
+      fi; \
+      cp /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1.gguf; \
+      if [ -x /work/llama.cpp/build/bin/llama-quantize ]; then \
+        /work/llama.cpp/build/bin/llama-quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
+      elif [ -x /work/llama.cpp/bin/llama-quantize ]; then \
+        /work/llama.cpp/bin/llama-quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
+      elif [ -x /work/llama.cpp/build/bin/quantize ]; then \
+        /work/llama.cpp/build/bin/quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
+      elif [ -x /work/llama.cpp/bin/quantize ]; then \
+        /work/llama.cpp/bin/quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
+      else \
+        echo "ERROR: llama-quantize/quantize binary not found; cannot create q4 model" && exit 1; \
+      fi; \
+      cp /work/llm-models/sarvam-1.gguf /work/model-cache/sarvam-1.gguf; \
+      cp /work/llm-models/sarvam-1-q4.gguf /work/model-cache/sarvam-1-q4.gguf; \
     fi
 
-RUN --mount=type=cache,target=/root/.cache/huggingface \
-    python3 /work/export_svara_onnx.py \
-      --model-id "${SVARA_TTS_HF_MODEL_ID}" \
-      --output /work/tts-models/svara_tts.onnx \
-      --opset 17
+RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
+    --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
+    mkdir -p /work/tts-models /work/model-cache && \
+    if [ -f /work/model-cache/svara_tts.onnx ]; then \
+      echo "Using cached ONNX artifact"; \
+      cp /work/model-cache/svara_tts.onnx /work/tts-models/svara_tts.onnx; \
+    else \
+      python3 /work/export_svara_onnx.py \
+        --model-id "${SVARA_TTS_HF_MODEL_ID}" \
+        --output /work/tts-models/svara_tts.onnx \
+        --opset 17 && \
+      cp /work/tts-models/svara_tts.onnx /work/model-cache/svara_tts.onnx; \
+    fi
 
 # -------------------------------
 # C++ engine builds

@@ -24,6 +24,9 @@ def _load_model(model_id: str):
         common_kwargs = {
             "use_safetensors": True,
             "trust_remote_code": True,
+            # Avoid SDPA/vmap masking path that breaks ONNX tracing for some
+            # Llama-based configs in recent torch/transformers combinations.
+            "attn_implementation": "eager",
         }
         try:
             # Newer transformers prefers `dtype`; keep backward fallback below.
@@ -70,18 +73,23 @@ def export_onnx(model_id: str, output: Path, opset: int = 17) -> None:
             model.config.use_cache = False
         except Exception:
             pass
+        try:
+            model.config._attn_implementation = "eager"
+        except Exception:
+            pass
 
     class _OnnxWrapper(torch.nn.Module):
-        def __init__(self, inner):
+        def __init__(self, inner, include_attention_mask: bool):
             super().__init__()
             self.inner = inner
             self._allowed = set(inspect.signature(inner.forward).parameters.keys())
+            self._include_attention_mask = include_attention_mask
 
         def forward(self, input_ids, attention_mask):
             kwargs = {}
             if "input_ids" in self._allowed:
                 kwargs["input_ids"] = input_ids
-            if "attention_mask" in self._allowed:
+            if self._include_attention_mask and "attention_mask" in self._allowed:
                 kwargs["attention_mask"] = attention_mask
             out = self.inner(**kwargs)
             if hasattr(out, "last_hidden_state"):
@@ -90,35 +98,51 @@ def export_onnx(model_id: str, output: Path, opset: int = 17) -> None:
                 return out[0]
             return out
 
-    wrapper = _OnnxWrapper(model).eval()
-
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Exporting ONNX to: {output}")
-    torch.onnx.export(
-        wrapper,
-        (input_ids, attention_mask),
-        str(output),
-        input_names=["input_ids", "attention_mask"],
-        output_names=["audio"],
-        dynamic_axes={
+    def _do_export(include_attention_mask: bool) -> None:
+        wrapper = _OnnxWrapper(model, include_attention_mask=include_attention_mask).eval()
+        input_names = ["input_ids"]
+        dynamic_axes = {
             "input_ids": {0: "batch", 1: "seq"},
-            "attention_mask": {0: "batch", 1: "seq"},
             "audio": {0: "batch", 1: "time"},
-        },
-        opset_version=opset,
-        do_constant_folding=True,
-    )
+        }
+        export_args = (input_ids, attention_mask)
+        if include_attention_mask:
+            input_names.append("attention_mask")
+            dynamic_axes["attention_mask"] = {0: "batch", 1: "seq"}
+        print(
+            f"Exporting ONNX to: {output} "
+            f"(include_attention_mask={include_attention_mask})"
+        )
+        torch.onnx.export(
+            wrapper,
+            export_args,
+            str(output),
+            input_names=input_names,
+            output_names=["audio"],
+            dynamic_axes=dynamic_axes,
+            opset_version=opset,
+            do_constant_folding=True,
+        )
+
+    try:
+        _do_export(include_attention_mask=True)
+    except RuntimeError as exc:
+        print(f"Primary export path failed: {exc}")
+        print("Retrying export without attention_mask to bypass tracing issue...")
+        _do_export(include_attention_mask=False)
 
     print("Validating with ONNX Runtime...")
     import numpy as np
     import onnxruntime as ort
 
     sess = ort.InferenceSession(str(output), providers=["CPUExecutionProvider"])
-    ort_inputs = {
-        "input_ids": input_ids.detach().cpu().numpy().astype(np.int64),
-        "attention_mask": attention_mask.detach().cpu().numpy().astype(np.int64),
-    }
+    ort_inputs = {"input_ids": input_ids.detach().cpu().numpy().astype(np.int64)}
+    if any(inp.name == "attention_mask" for inp in sess.get_inputs()):
+        ort_inputs["attention_mask"] = (
+            attention_mask.detach().cpu().numpy().astype(np.int64)
+        )
     ort_out = sess.run(["audio"], ort_inputs)
     if not ort_out or ort_out[0] is None:
         raise RuntimeError("ONNX Runtime produced empty output")
