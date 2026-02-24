@@ -117,13 +117,17 @@ COPY --from=llama-build /work/llama.cpp /work/llama.cpp
 COPY scripts/export_svara_onnx.py /work/export_svara_onnx.py
 
 RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
-    pip install huggingface_hub && \
+    pip install huggingface_hub==0.23.5 && \
     if [ -f /work/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt ]; then \
       pip install -r /work/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt; \
     fi
 
 RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
-    pip install torch transformers onnxruntime numpy
+    pip install \
+      torch==2.2.2 \
+      transformers==4.41.2 \
+      onnxruntime==1.18.1 \
+      numpy==1.24.3
 
 RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
     --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \

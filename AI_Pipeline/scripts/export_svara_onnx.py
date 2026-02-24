@@ -29,17 +29,17 @@ def _load_model(model_id: str):
             "attn_implementation": "eager",
         }
         try:
-            # Newer transformers prefers `dtype`; keep backward fallback below.
+            # Prefer FP16 for smaller/faster ONNX in CPU-only runtime.
             return cls.from_pretrained(
                 model_id,
-                dtype=torch.float32,
+                dtype=torch.float16,
                 **common_kwargs,
             )
         except TypeError:
             try:
                 return cls.from_pretrained(
                     model_id,
-                    torch_dtype=torch.float32,
+                    torch_dtype=torch.float16,
                     **common_kwargs,
                 )
             except Exception as exc:  # noqa: BLE001
@@ -58,6 +58,7 @@ def _load_tokenizer(model_id: str):
 def export_onnx(model_id: str, output: Path, opset: int = 17) -> None:
     print(f"Loading model: {model_id}")
     model = _load_model(model_id)
+    model = model.half()
     model.eval()
 
     print("Loading tokenizer...")
@@ -85,11 +86,15 @@ def export_onnx(model_id: str, output: Path, opset: int = 17) -> None:
             self._allowed = set(inspect.signature(inner.forward).parameters.keys())
             self._include_attention_mask = include_attention_mask
 
-        def forward(self, input_ids, attention_mask):
+        def forward(self, input_ids, attention_mask=None):
             kwargs = {}
             if "input_ids" in self._allowed:
                 kwargs["input_ids"] = input_ids
-            if self._include_attention_mask and "attention_mask" in self._allowed:
+            if (
+                self._include_attention_mask
+                and attention_mask is not None
+                and "attention_mask" in self._allowed
+            ):
                 kwargs["attention_mask"] = attention_mask
             out = self.inner(**kwargs)
             if hasattr(out, "last_hidden_state"):
@@ -107,8 +112,9 @@ def export_onnx(model_id: str, output: Path, opset: int = 17) -> None:
             "input_ids": {0: "batch", 1: "seq"},
             "audio": {0: "batch", 1: "time"},
         }
-        export_args = (input_ids, attention_mask)
+        export_args = (input_ids,)
         if include_attention_mask:
+            export_args = (input_ids, attention_mask)
             input_names.append("attention_mask")
             dynamic_axes["attention_mask"] = {0: "batch", 1: "seq"}
         print(
@@ -128,7 +134,7 @@ def export_onnx(model_id: str, output: Path, opset: int = 17) -> None:
 
     try:
         _do_export(include_attention_mask=True)
-    except RuntimeError as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"Primary export path failed: {exc}")
         print("Retrying export without attention_mask to bypass tracing issue...")
         _do_export(include_attention_mask=False)
