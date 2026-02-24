@@ -125,7 +125,7 @@ RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
     pip install --upgrade --force-reinstall \
       --index-url https://download.pytorch.org/whl/cpu \
       --extra-index-url https://pypi.org/simple \
-      torch==2.2.2 && \
+      torch==2.6.0 && \
     pip install --upgrade --force-reinstall \
       transformers==4.55.4 \
       onnxruntime==1.18.1 \
@@ -138,7 +138,7 @@ print("transformers", transformers.__version__)
 print("onnxruntime", onnxruntime.__version__)
 print("numpy", numpy.__version__)
 assert transformers.__version__ == "4.55.4", f"unexpected transformers version: {transformers.__version__}"
-assert torch.__version__.startswith("2.2.2"), f"unexpected torch version: {torch.__version__}"
+assert torch.__version__.startswith("2.6.0"), f"unexpected torch version: {torch.__version__}"
 assert onnxruntime.__version__ == "1.18.1", f"unexpected onnxruntime version: {onnxruntime.__version__}"
 assert numpy.__version__ == "1.24.3", f"unexpected numpy version: {numpy.__version__}"
 PY
@@ -156,6 +156,7 @@ RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
     rm -rf /work/sarvam-1 && cp -a /work/model-cache/sarvam-1 /work/sarvam-1
 
 RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
+    set -eu; \
     mkdir -p /work/llm-models /work/model-cache && \
     if [ -f /work/model-cache/sarvam-1-q4.gguf ] && [ -f /work/model-cache/sarvam-1.gguf ]; then \
       echo "Using cached GGUF artifacts"; \
@@ -171,6 +172,7 @@ RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
       else \
         echo "ERROR: could not find llama.cpp HF->GGUF conversion script" && exit 1; \
       fi; \
+      [ -f /work/llm-models/sarvam-1-f16.gguf ]; \
       cp /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1.gguf; \
       if [ -x /work/llama.cpp/build/bin/llama-quantize ]; then \
         /work/llama.cpp/build/bin/llama-quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
@@ -183,6 +185,7 @@ RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
       else \
         echo "ERROR: llama-quantize/quantize binary not found; cannot create q4 model" && exit 1; \
       fi; \
+      [ -f /work/llm-models/sarvam-1-q4.gguf ]; \
       cp /work/llm-models/sarvam-1.gguf /work/model-cache/sarvam-1.gguf; \
       cp /work/llm-models/sarvam-1-q4.gguf /work/model-cache/sarvam-1-q4.gguf; \
     fi
