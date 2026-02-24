@@ -128,7 +128,11 @@ RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
 RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
     --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
     mkdir -p /work/model-cache/sarvam-1 && \
-    python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${SARVAM_HF_MODEL_ID}', local_dir='/work/model-cache/sarvam-1', token='${HF_TOKEN}' if '${HF_TOKEN}' else None, local_dir_use_symlinks=False)" && \
+    if [ -f /work/model-cache/sarvam-1/config.json ]; then \
+      echo "Using cached Sarvam HF snapshot"; \
+    else \
+      python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${SARVAM_HF_MODEL_ID}', local_dir='/work/model-cache/sarvam-1', token='${HF_TOKEN}' if '${HF_TOKEN}' else None, local_dir_use_symlinks=False)"; \
+    fi && \
     rm -rf /work/sarvam-1 && cp -a /work/model-cache/sarvam-1 /work/sarvam-1
 
 RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \

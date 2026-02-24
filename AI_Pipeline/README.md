@@ -11,6 +11,12 @@ Real-time voice translation backend with a Go API layer, C++ translation/TTS dae
 - TTS: Svara C++ daemon (`app/pipeline/tts/tts_engine.cpp`)
 - Proto/gRPC: `proto/voice_translator.proto`
 
+Model format labels:
+
+- Translator (Sarvam): `GGUF Q4_K_M` (`SARVAM_MODEL_PATH`)
+- TTS (Svara): `ONNX` (`SVARA_TTS_ONNX_MODEL_PATH`)
+- STT (Vosk): model directories under `models/stt`
+
 ## Features
 
 - Low-latency STT -> Translate -> TTS pipeline
