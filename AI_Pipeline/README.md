@@ -17,6 +17,8 @@ Real-time voice translation backend with a Go API layer, C++ translation/TTS dae
 - WebSocket room routing for multi-user sessions
 - HTTP APIs for STT, translation, TTS, and combined pipeline
 - gRPC services for STT, translation, and TTS
+- Internal HTTP -> gRPC routing for Translation/TTS paths
+- HTTP streaming relay for TTS via `?stream=true`
 - Docker build with prebuilt C++ binaries and model artifacts
 
 ## Prerequisites (Local Run)
@@ -87,11 +89,18 @@ Generated files:
 - `POST /translate`
 - `POST /translate/batch`
 - `POST /tts/generate`
+- `POST /tts/generate?stream=true`
 - `POST /translate-tts`
+- `POST /translate-tts?stream=true`
 - `POST /stt/transcribe`
 - `POST /stt/transcribe-file`
 - `POST /stt/transcribe-batch`
 - `GET /ws` (WebSocket upgrade path)
+
+Pipeline note:
+
+- Translation/TTS HTTP routes use internal gRPC clients and handlers before worker execution.
+- STT HTTP routes remain direct worker calls.
 
 ## gRPC
 
@@ -137,6 +146,12 @@ AI_Pipeline/
 
 ## Docs
 
-- WebSocket protocol: `docs/websocket-protocol.md`
+- API guide: `docs/api.md`
+- Architecture: `docs/architecture.md`
+- Go server: `docs/go-server.md`
+- gRPC guide: `docs/grpc.md`
 - Latency strategy: `docs/latency-strategy.md`
-- TTS warm start: `docs/TTS_WARM_START.md`
+- STT component: `docs/stt.md`
+- Translation component: `docs/translator.md`
+- TTS component: `docs/tts.md`
+- API examples: `Voice_Translator_API.postman_collection.json`
