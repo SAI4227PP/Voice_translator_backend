@@ -20,13 +20,26 @@ def _load_model(model_id: str):
 
     last_exc: Exception | None = None
     for cls in (AutoModel, AutoModelForSpeechSeq2Seq):
+        common_kwargs = {
+            "use_safetensors": True,
+            "trust_remote_code": True,
+        }
         try:
+            # Newer transformers prefers `dtype`; keep backward fallback below.
             return cls.from_pretrained(
                 model_id,
-                torch_dtype=torch.float32,
-                use_safetensors=True,
-                trust_remote_code=True,
+                dtype=torch.float32,
+                **common_kwargs,
             )
+        except TypeError:
+            try:
+                return cls.from_pretrained(
+                    model_id,
+                    torch_dtype=torch.float32,
+                    **common_kwargs,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
     raise RuntimeError(f"failed to load model {model_id}: {last_exc}")
