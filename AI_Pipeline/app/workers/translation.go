@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -172,6 +171,25 @@ func (t *SarvamTranslator) ensureStarted() error {
 	return nil
 }
 
+func (t *SarvamTranslator) resetProcessLocked() {
+	if t.cmd != nil && t.cmd.Process != nil {
+		_ = t.cmd.Process.Kill()
+		_, _ = t.cmd.Process.Wait()
+	}
+	t.started = false
+	t.cmd = nil
+	t.stdin = nil
+	t.stdout = nil
+}
+
+func (t *SarvamTranslator) stderrTailLocked() string {
+	s := strings.TrimSpace(t.stderr.String())
+	if len(s) > 500 {
+		return s[len(s)-500:]
+	}
+	return s
+}
+
 func (t *SarvamTranslator) stderrLoop(r io.Reader) {
 	buf := make([]byte, 1024)
 	for {
@@ -255,8 +273,17 @@ func (t *SarvamTranslator) sendRequest(cmd, source, target, text string, texts [
 	if err == nil {
 		err = t.stdin.Flush()
 	}
+	var stderrTail string
 	t.mu.Unlock()
 	if err != nil {
+		t.mu.Lock()
+		delete(t.pending, id)
+		stderrTail = t.stderrTailLocked()
+		t.resetProcessLocked()
+		t.mu.Unlock()
+		if stderrTail != "" {
+			return nil, fmt.Errorf("%w (stderr_tail=%s)", err, stderrTail)
+		}
 		return nil, err
 	}
 
@@ -270,7 +297,12 @@ func (t *SarvamTranslator) sendRequest(cmd, source, target, text string, texts [
 	case <-time.After(timeout):
 		t.mu.Lock()
 		delete(t.pending, id)
+		stderrTail = t.stderrTailLocked()
+		t.resetProcessLocked()
 		t.mu.Unlock()
+		if stderrTail != "" {
+			return nil, fmt.Errorf("translation timeout (stderr_tail=%s)", stderrTail)
+		}
 		return nil, errors.New("translation timeout")
 	}
 }
@@ -330,9 +362,6 @@ func fallback(v, d string) string {
 func (t *SarvamTranslator) Close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.cmd != nil && t.cmd.Process != nil {
-		_ = t.cmd.Process.Signal(os.Interrupt)
-		_, _ = t.cmd.Process.Wait()
-	}
+	t.resetProcessLocked()
 }
 

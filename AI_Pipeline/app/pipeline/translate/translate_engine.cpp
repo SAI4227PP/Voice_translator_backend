@@ -1105,9 +1105,6 @@ private:
             args.push_back(const_cast<char*>(port_s.c_str()));
             args.push_back(const_cast<char*>("-ngl"));
             args.push_back(const_cast<char*>(ngl_s.c_str()));
-            std::string np_s = std::to_string(kMaxKvSlots);
-            args.push_back(const_cast<char*>("-np"));
-            args.push_back(const_cast<char*>(np_s.c_str()));
             args.push_back(nullptr);
 
             execv(llama_server_path.c_str(), args.data());
