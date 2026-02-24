@@ -46,6 +46,7 @@ struct EngineConfig {
     int worker_count = 2;
     int max_input_chars = 1200;
     bool use_onnx = false;
+    bool use_local_model = false;
     int onnx_sample_rate = 24000;
     int onnx_threads = 1;
 };
@@ -78,6 +79,13 @@ const std::unordered_set<std::string> kSupportedLanguages = {
 bool ends_with(const std::string& text, const std::string& suffix) {
     return text.size() >= suffix.size() &&
            text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::string to_lower(std::string input) {
+    std::transform(input.begin(), input.end(), input.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return input;
 }
 
 std::string trim(const std::string& input) {
@@ -685,6 +693,9 @@ private:
             return {"", "onnx_backend_not_compiled"};
 #endif
         }
+        if (cfg_.use_local_model) {
+            return {"", "local_non_onnx_tts_not_implemented"};
+        }
 
         const std::string clean_text = truncate_text(trim(text), cfg_.max_input_chars);
         if (clean_text.empty()) {
@@ -794,7 +805,8 @@ EngineConfig parse_daemon_config(int argc, char* argv[]) {
     cfg.api_key = (argc > 9) ? argv[9] : "-";
     cfg.onnx_threads = (argc > 10) ? std::max(1, std::atoi(argv[10])) : 1;
     cfg.onnx_sample_rate = (argc > 11) ? std::max(8000, std::atoi(argv[11])) : 24000;
-    cfg.use_onnx = ends_with(cfg.model_id, ".onnx") || fs::exists(cfg.model_id);
+    cfg.use_local_model = fs::exists(cfg.model_id);
+    cfg.use_onnx = cfg.use_local_model && ends_with(to_lower(trim(cfg.model_id)), ".onnx");
     return cfg;
 }
 
@@ -812,7 +824,7 @@ int tts_engine::run_tts_engine(int argc, char* argv[]) {
             std::cerr << "missing_model\n";
             return 2;
         }
-        if (!cfg.use_onnx && cfg.api_base_url.empty()) {
+        if (!cfg.use_onnx && !cfg.use_local_model && cfg.api_base_url.empty()) {
             std::cerr << "missing_api_url_for_http_mode\n";
             return 2;
         }
@@ -830,11 +842,14 @@ int tts_engine::run_tts_engine(int argc, char* argv[]) {
             std::cerr << "invalid_configuration\n";
             return 2;
         }
-        const bool is_local_model = ends_with(model_id, ".onnx") || fs::exists(model_id);
+        const bool is_local_model = fs::exists(model_id);
+        const bool is_local_onnx = is_local_model && ends_with(to_lower(trim(model_id)), ".onnx");
         if (is_local_model) {
-            if (!fs::exists(model_id)) {
-                std::cerr << "onnx_model_not_found\n";
-                return 2;
+            if (is_local_onnx) {
+                if (!fs::exists(model_id)) {
+                    std::cerr << "onnx_model_not_found\n";
+                    return 2;
+                }
             }
         } else if (trim(api_base).empty() || api_base == "-") {
             std::cerr << "invalid_api_base_for_http_mode\n";

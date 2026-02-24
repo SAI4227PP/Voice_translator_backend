@@ -67,7 +67,7 @@ func (t *SvaraTTS) ensureStarted() error {
 		return nil
 	}
 
-	localModelPath, err := requireLocalONNXModel(t.settings)
+	apiBase, modelRef, err := resolveTTSRuntimeConfig(t.settings)
 	if err != nil {
 		return err
 	}
@@ -75,8 +75,8 @@ func (t *SvaraTTS) ensureStarted() error {
 	validate := exec.Command(
 		t.settings.SvaraCppBinaryPath,
 		"validate",
-		"-",
-		localModelPath,
+		apiBase,
+		modelRef,
 	)
 	if out, err := validate.CombinedOutput(); err != nil {
 		return fmt.Errorf("tts validation failed: %s (%w)", strings.TrimSpace(string(out)), err)
@@ -84,8 +84,8 @@ func (t *SvaraTTS) ensureStarted() error {
 
 	args := []string{
 		"daemon",
-		"-",
-		localModelPath,
+		apiBase,
+		modelRef,
 		t.settings.SvaraDefaultVoice,
 		fmt.Sprintf("%d", t.settings.SvaraTimeoutSeconds),
 		fmt.Sprintf("%d", t.settings.SvaraDaemonQueueSize),
@@ -121,18 +121,21 @@ func (t *SvaraTTS) ensureStarted() error {
 	return nil
 }
 
-func requireLocalONNXModel(s Settings) (string, error) {
-	path := strings.TrimSpace(s.SvaraOnnxModelPath)
-	if path == "" || !strings.HasSuffix(strings.ToLower(path), ".onnx") {
-		return "", errors.New("local ONNX TTS model is required; set SVARA_TTS_ONNX_MODEL_PATH to a .onnx file")
+func resolveTTSRuntimeConfig(s Settings) (apiBase string, modelRef string, err error) {
+	modelID := strings.TrimSpace(s.SvaraModelID)
+	if modelID == "" {
+		return "", "", errors.New("tts model ref missing; set SVARA_TTS_MODEL_ID (GGUF mode)")
 	}
-	if st, err := os.Stat(path); err != nil || st.IsDir() {
-		if err != nil {
-			return "", fmt.Errorf("local ONNX TTS model not found at %q: %w", path, err)
-		}
-		return "", fmt.Errorf("local ONNX TTS model path is a directory: %q", path)
+	if st, statErr := os.Stat(modelID); statErr == nil && !st.IsDir() {
+		// Local model path mode (e.g. GGUF/ONNX file).
+		return "-", modelID, nil
 	}
-	return path, nil
+
+	apiBase = strings.TrimSpace(s.SvaraAPIBaseURL)
+	if apiBase == "" || apiBase == "-" {
+		return "", "", errors.New("non-local TTS mode requires SVARA_TTS_API_BASE_URL")
+	}
+	return apiBase, modelID, nil
 }
 
 func (t *SvaraTTS) readLoop() {

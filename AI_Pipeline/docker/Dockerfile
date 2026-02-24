@@ -111,6 +111,9 @@ WORKDIR /work
 
 ARG SARVAM_HF_MODEL_ID=sarvamai/sarvam-1
 ARG SVARA_TTS_HF_MODEL_ID=kenpath/svara-tts-v1
+ARG SVARA_TTS_GGUF_HF_REPO=mradermacher/svara-tts-v1-GGUF
+ARG SVARA_TTS_GGUF_FILE=svara-tts-v1.Q5_K_M.gguf
+ARG ENABLE_TTS_ONNX_EXPORT=false
 ARG HF_TOKEN
 
 COPY --from=llama-build /work/llama.cpp /work/llama.cpp
@@ -192,8 +195,23 @@ RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
 
 RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
     --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
+    set -eu; \
+    mkdir -p /work/llm-models /work/model-cache/svara-gguf && \
+    if [ -f "/work/model-cache/${SVARA_TTS_GGUF_FILE}" ]; then \
+      echo "Using cached Svara GGUF artifact"; \
+    else \
+      python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${SVARA_TTS_GGUF_HF_REPO}', local_dir='/work/model-cache/svara-gguf', allow_patterns=['${SVARA_TTS_GGUF_FILE}'], token='${HF_TOKEN}' if '${HF_TOKEN}' else None, local_dir_use_symlinks=False)" && \
+      cp "/work/model-cache/svara-gguf/${SVARA_TTS_GGUF_FILE}" "/work/model-cache/${SVARA_TTS_GGUF_FILE}"; \
+    fi && \
+    cp "/work/model-cache/${SVARA_TTS_GGUF_FILE}" "/work/llm-models/${SVARA_TTS_GGUF_FILE}"
+
+RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
+    --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
     mkdir -p /work/tts-models /work/model-cache && \
-    if [ -f /work/model-cache/svara_tts.onnx ]; then \
+    if [ "${ENABLE_TTS_ONNX_EXPORT}" != "true" ]; then \
+      echo "Skipping TTS ONNX export (ENABLE_TTS_ONNX_EXPORT=${ENABLE_TTS_ONNX_EXPORT})"; \
+      :; \
+    elif [ -f /work/model-cache/svara_tts.onnx ]; then \
       echo "Using cached ONNX artifact"; \
       cp /work/model-cache/svara_tts.onnx /work/tts-models/svara_tts.onnx; \
     else \
@@ -289,7 +307,7 @@ COPY --from=llama-build /work/llama-runtime/bin/ /app/llama.cpp/bin/
 
 # Copy prebuilt model artifacts only
 COPY --from=model-build /work/llm-models/ /app/llm-models/
-COPY --from=model-build /work/tts-models/svara_tts.onnx /app/tts-models/svara_tts.onnx
+COPY --from=model-build /work/tts-models/ /app/tts-models/
 
 # Copy compiled C++ daemons only
 COPY --from=cpp-build /app/app/pipeline/translate/translate_engine /app/app/pipeline/translate/translate_engine
@@ -324,8 +342,8 @@ ENV HOST=0.0.0.0 \
     LLAMA_CLI_PATH=/app/llama.cpp/bin/llama-cli \
     TTS_ENGINE=svara \
     SVARA_TTS_CPP_BINARY_PATH=/app/app/pipeline/tts/tts_engine \
-    SVARA_TTS_MODEL_ID=kenpath/svara-tts-v1 \
-    SVARA_TTS_ONNX_MODEL_PATH=/app/tts-models/svara_tts.onnx \
+    SVARA_TTS_MODEL_ID=/app/llm-models/svara-tts-v1.Q5_K_M.gguf \
+    SVARA_TTS_ONNX_MODEL_PATH= \
     SVARA_TTS_TOKENIZER_ID=kenpath/svara-tts-v1 \
     SVARA_TTS_ONNX_THREADS=1 \
     SVARA_TTS_ONNX_SAMPLE_RATE=24000 \

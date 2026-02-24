@@ -20,6 +20,9 @@ services:
         - HF_TOKEN=${HF_TOKEN:-}
         - SARVAM_HF_MODEL_ID=${SARVAM_HF_MODEL_ID:-sarvamai/sarvam-1}
         - SVARA_TTS_HF_MODEL_ID=${SVARA_TTS_HF_MODEL_ID:-kenpath/svara-tts-v1}
+        - SVARA_TTS_GGUF_HF_REPO=${SVARA_TTS_GGUF_HF_REPO:-mradermacher/svara-tts-v1-GGUF}
+        - SVARA_TTS_GGUF_FILE=${SVARA_TTS_GGUF_FILE:-svara-tts-v1.Q5_K_M.gguf}
+        - ENABLE_TTS_ONNX_EXPORT=${ENABLE_TTS_ONNX_EXPORT:-false}
     container_name: voice-translator-app
     ports:
       - "7860:7860"
@@ -60,10 +63,10 @@ services:
       - TRANSLATION_WARM_START_MODE=common
       - TRANSLATION_COMMON_PAIRS=en-hi,hi-en,en-bn,bn-en
       - TTS_ENGINE=svara
-      # TTS model format: ONNX (not GGUF)
+      # TTS model format: GGUF (local path)
       - SVARA_TTS_CPP_BINARY_PATH=/app/app/pipeline/tts/tts_engine
-      - SVARA_TTS_MODEL_ID=kenpath/svara-tts-v1
-      - SVARA_TTS_ONNX_MODEL_PATH=/app/tts-models/svara_tts.onnx
+      - SVARA_TTS_MODEL_ID=/app/llm-models/${SVARA_TTS_GGUF_FILE:-svara-tts-v1.Q5_K_M.gguf}
+      - SVARA_TTS_ONNX_MODEL_PATH=
       - SVARA_TTS_TOKENIZER_ID=kenpath/svara-tts-v1
       - SVARA_TTS_ONNX_THREADS=1
       - SVARA_TTS_ONNX_SAMPLE_RATE=24000
