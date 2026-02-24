@@ -15,13 +15,6 @@ pyaudio==0.2.13
 vosk==0.3.45
 
 # Translation
-argostranslate
-spacy==3.8.0
-xx-sent-ud-sm @ https://github.com/explosion/spacy-models/releases/download/xx_sent_ud_sm-3.8.0/xx_sent_ud_sm-3.8.0-py3-none-any.whl
-
-# Text-to-Speech
-TTS==0.21.1
-pyttsx3==2.90
 
 # Async and concurrency
 aiofiles==23.2.1

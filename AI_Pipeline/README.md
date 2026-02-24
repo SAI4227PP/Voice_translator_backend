@@ -1,177 +1,143 @@
 # Voice-to-Voice Translator
 
-A real-time voice-to-voice translation system using WebSocket connections for low-latency audio streaming and translation between multiple languages.
+Real-time voice translation backend with a Go API layer, C++ translation/TTS daemons, Python STT bridge, WebSocket rooms, and optional gRPC services.
+
+## Current Stack
+
+- API server: Go (`go_server/main.go`)
+- WebSocket transport: Go room-based server
+- STT: Python Vosk bridge (`app/workers/stt.go`)
+- Translation: Sarvam C++ daemon (`app/pipeline/translate/translate_engine.cpp`)
+- TTS: Svara C++ daemon (`app/pipeline/tts/tts_engine.cpp`)
+- Proto/gRPC: `proto/voice_translator.proto`
 
 ## Features
 
-- **Real-time Audio Streaming**: WebSocket-based bidirectional audio communication
-- **Multi-language Support**: English and Hindi with extensible language support
-- **Low Latency Pipeline**: Optimized STT → Translation → TTS pipeline
-- **Room-based Architecture**: Support for multiple concurrent translation sessions
-- **Offline Capable**: Uses local models (Vosk, Argos, Coqui TTS)
-- **Scalable Design**: Worker-based architecture for handling concurrent users
+- Low-latency STT -> Translate -> TTS pipeline
+- WebSocket room routing for multi-user sessions
+- HTTP APIs for STT, translation, TTS, and combined pipeline
+- gRPC services for STT, translation, and TTS
+- Docker build with prebuilt C++ binaries and model artifacts
 
-## Architecture
+## Prerequisites (Local Run)
 
-The system consists of several key components:
+- Go 1.22+
+- Python 3.11+
+- CMake + C++ toolchain
+- `protoc` (for local gRPC code generation)
 
-1. **WebSocket Server**: Manages real-time connections and audio streaming
-2. **Speech-to-Text (STT)**: Vosk-based speech recognition
-3. **Translation Engine**: Argos Translate for language translation
-4. **Text-to-Speech (TTS)**: Coqui TTS for natural voice synthesis
-5. **Room Manager**: Handles multi-user session management
-6. **Pipeline Manager**: Orchestrates the complete translation flow
-
-## Prerequisites
-
-- Python 3.9+
-- 4GB RAM minimum (8GB recommended)
-- 5GB disk space for models
-- Linux/Windows/MacOS
-
-## Quick Start
-
-### 1. Clone the repository
+## Quick Start (Docker Recommended)
 
 ```bash
-git clone <repository-url>
-cd voice-to-voice-translator
+docker compose -f docker/docker-compose.yml up --build
 ```
 
-### 2. Install dependencies
+Default endpoints:
+
+- HTTP: `http://localhost:7860`
+- WebSocket: `ws://localhost:7860/ws`
+- gRPC: `localhost:50051` (enabled in compose)
+
+## Quick Start (Local Development)
+
+1. Install Python dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Download models
+2. Generate Go proto stubs (required for local Go build):
+
+Windows PowerShell:
+
+```powershell
+.\scripts\gen_go_proto.ps1
+```
+
+Linux/macOS:
 
 ```bash
-python scripts/download_models.py
+./scripts/gen_go_proto.sh
 ```
 
-### 4. Configure environment
+3. Run Go server:
 
 ```bash
-cp .env.example .env
-# Edit .env with your configuration
+cd go_server
+go run .
 ```
 
-### 5. Run the server
+## Important Note About gRPC Build
 
-```bash
-python app/main.py
-```
+The Go server imports generated files from `go_server/proto`.  
+Docker generates them during image build, but local IDE/local `go build` requires you to run the proto generation scripts first.
 
-The server will start on `ws://localhost:8000` by default.
+Generated files:
 
-## Configuration
+- `go_server/proto/voice_translator.pb.go`
+- `go_server/proto/voice_translator_grpc.pb.go`
 
-Key configuration options in `.env`:
+## Core Endpoints
 
-- `HOST`: Server host (default: 0.0.0.0)
-- `PORT`: Server port (default: 8000)
-- `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR)
-- `MAX_CONNECTIONS`: Maximum concurrent connections
-- `AUDIO_SAMPLE_RATE`: Audio sample rate (default: 16000)
-- `AUDIO_CHUNK_SIZE`: Audio chunk size in bytes
+- `GET /health`
+- `GET /stats`
+- `GET /config`
+- `GET /languages/supported`
+- `GET /languages/pairs`
+- `POST /translate`
+- `POST /translate/batch`
+- `POST /tts/generate`
+- `POST /translate-tts`
+- `POST /stt/transcribe`
+- `POST /stt/transcribe-file`
+- `POST /stt/transcribe-batch`
+- `GET /ws` (WebSocket upgrade path)
 
-## WebSocket Protocol
+## gRPC
 
-Clients connect to the WebSocket endpoint and exchange JSON messages:
+Proto file:
 
-```json
-{
-  "type": "join_room",
-  "room_id": "room123",
-  "user_id": "user1",
-  "source_lang": "en",
-  "target_lang": "hi"
-}
-```
+- `proto/voice_translator.proto`
 
-See [docs/websocket-protocol.md](docs/websocket-protocol.md) for complete protocol documentation.
+Services:
 
-## API Endpoints
+- `STTService`
+- `TranslationService`
+- `TTSService`
 
-- `ws://host:port/ws`: Main WebSocket endpoint
-- `http://host:port/health`: Health check endpoint
-- `http://host:port/metrics`: Metrics endpoint (optional)
+Environment flags:
 
-## Testing
-
-```bash
-# Run all tests
-pytest tests/
-
-# Run specific test
-pytest tests/test_stt.py
-
-# Run with coverage
-pytest --cov=app tests/
-```
-
-## Docker Deployment
-
-```bash
-# Build image
-docker build -f docker/Dockerfile -t voice-translator .
-
-# Run with docker-compose
-docker-compose -f docker/docker-compose.yml up
-```
-
-## Performance
-
-- **STT Latency**: ~100-200ms
-- **Translation Latency**: ~50-100ms
-- **TTS Latency**: ~200-300ms
-- **Total End-to-End Latency**: ~500ms (target)
+- `GRPC_ENABLED` (default `false`)
+- `GRPC_PORT` (default `50051`)
 
 ## Project Structure
 
+```text
+AI_Pipeline/
+  app/
+    config/        # Go config package
+    messaging/     # Go websocket message router/protocol
+    pipeline/      # C++ engines and Python runtime modules
+    rooms/         # Go room manager
+    utils/         # Go utilities (scanner/logger/errors/timers)
+    workers/       # Go workers (STT bridge, translation, TTS)
+  go_server/
+    grpcserver/    # gRPC service implementation
+    server/        # WebSocket server internals
+    proto/         # Generated Go protobuf/grpc files
+    main.go        # Go server entrypoint
+  proto/
+    voice_translator.proto
+  docker/
+    Dockerfile
+    docker-compose.yml
+  scripts/
+    gen_go_proto.ps1
+    gen_go_proto.sh
 ```
-voice-to-voice-translator/
-├── app/                    # Application code
-│   ├── main.py            # Entry point
-│   ├── config/            # Configuration
-│   ├── server/            # WebSocket server
-│   ├── rooms/             # Room management
-│   ├── pipeline/          # STT, Translation, TTS
-│   ├── audio/             # Audio processing
-│   ├── messaging/         # WebSocket messages
-│   ├── security/          # Auth and rate limiting
-│   ├── workers/           # Background workers
-│   └── utils/             # Utilities
-├── models/                # ML models storage
-├── scripts/               # Utility scripts
-├── tests/                 # Test suite
-└── docs/                  # Documentation
-```
 
-## Contributing
+## Docs
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Support
-
-For issues and questions:
-- GitHub Issues: <repository-url>/issues
-- Documentation: [docs/](docs/)
-
-## Roadmap
-
-- [ ] Add more language pairs
-- [ ] Implement GPU acceleration
-- [ ] Add speaker diarization
-- [ ] Web-based client interface
-- [ ] Mobile app support
-- [ ] Cloud deployment guides
+- WebSocket protocol: `docs/websocket-protocol.md`
+- Latency strategy: `docs/latency-strategy.md`
+- TTS warm start: `docs/TTS_WARM_START.md`

@@ -1,4 +1,4 @@
-﻿services:
+services:
   model-downloader:
     build:
       context: ..
@@ -6,10 +6,10 @@
     volumes:
       - voice-models:/app/models
     environment:
-      - ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages
       - PYTHONUNBUFFERED=1
     container_name: voice-translator-downloader
     restart: "no"
+    profiles: ["setup"]
     command: python scripts/download_models.py
 
   voice-translator:
@@ -19,19 +19,35 @@
     container_name: voice-translator-app
     ports:
       - "7860:7860"
+      - "50051:50051"
     volumes:
       - voice-models:/app/models
     environment:
       - HOST=0.0.0.0
       - PORT=7860
+      - GRPC_ENABLED=True
+      - GRPC_PORT=50051
       - LOG_LEVEL=INFO
       - ENVIRONMENT=production
       - DEBUG=False
-      - ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages
+      - TRANSLATION_ENGINE=sarvam
+      - SARVAM_MODEL_PATH=/app/llm-models/sarvam-1-q4.gguf
+      - SARVAM_CPP_BINARY_PATH=/app/app/pipeline/translate/translate_engine
+      - SARVAM_MAX_CONCURRENT_PROCESSES=1
+      - SARVAM_DAEMON_WORKERS=2
+      - SARVAM_DAEMON_QUEUE_SIZE=256
+      - SARVAM_MAX_INPUT_CHARS=4000
+      - SARVAM_GPU_LAYERS=0
+      - LLAMA_SERVER_PORT=8089
+      - TRANSLATION_RETRY_COUNT=2
+      - TRANSLATION_RETRY_BACKOFF_MS=250
+      - TRANSLATION_CIRCUIT_BREAKER_THRESHOLD=5
+      - TRANSLATION_CIRCUIT_BREAKER_RESET_SECONDS=30
+      - LLAMA_CPP_PATH=/app/llama.cpp
+      - LLAMA_CLI_PATH=/app/llama.cpp/bin/llama-cli
       - NUMBA_CACHE_DIR=/tmp/numba_cache
       - XDG_CACHE_HOME=/tmp
       - HOME=/app
-      - SPACY_NO_DOWNLOADS=1
       - PIP_NO_INPUT=1
       - PIP_USER=0
       - STT_ENABLE_WARM_START=True
@@ -39,12 +55,26 @@
       - TRANSLATION_ENABLE_WARM_START=True
       - TRANSLATION_WARM_START_MODE=common
       - TRANSLATION_COMMON_PAIRS=en-hi,hi-en,en-bn,bn-en
+      - TTS_ENGINE=svara
+      - SVARA_TTS_CPP_BINARY_PATH=/app/app/pipeline/tts/tts_engine
+      - SVARA_TTS_MODEL_ID=kenpath/svara-tts-v1
+      - SVARA_TTS_ONNX_MODEL_PATH=/app/tts-models/svara_tts.onnx
+      - SVARA_TTS_TOKENIZER_ID=kenpath/svara-tts-v1
+      - SVARA_TTS_ONNX_THREADS=1
+      - SVARA_TTS_ONNX_SAMPLE_RATE=24000
+      - TTS_DAEMON_WORKERS=2
+      - ONNX_THREADS=1
+      - ONNX_SAMPLE_RATE=24000
+      - SVARA_TTS_API_BASE_URL=
+      - SVARA_TTS_API_KEY=
+      - SVARA_TTS_TIMEOUT_SECONDS=90
+      - SVARA_TTS_MAX_INPUT_CHARS=1200
+      - SVARA_TTS_DEFAULT_VOICE=anushka
+      - SVARA_TTS_DAEMON_WORKERS=2
+      - SVARA_TTS_DAEMON_QUEUE_SIZE=128
       - TTS_ENABLE_WARM_START=True
       - TTS_PRELOAD_LANGUAGES=en,hi,bn,ta
     restart: unless-stopped
-    depends_on:
-      model-downloader:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
       interval: 30s
@@ -55,3 +85,7 @@
 volumes:
   voice-models:
     name: voice-models
+
+
+
+

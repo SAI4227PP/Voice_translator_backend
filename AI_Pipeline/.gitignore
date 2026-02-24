@@ -49,13 +49,11 @@ logs/
 # Models (too large for git)
 models/stt/vosk-en/*
 models/stt/vosk-hi/*
-models/translate/argos-packages/*
 models/tts/coqui-models/*
 
 # Keep directory structure
 !models/stt/vosk-en/.gitkeep
 !models/stt/vosk-hi/.gitkeep
-!models/translate/argos-packages/.gitkeep
 !models/tts/coqui-models/.gitkeep
 
 # Testing

@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package voice_translator;
+option go_package = "voice_translator_go_server/proto;gen";
 
 // ==============================================================================
 // STT Service - Speech-to-Text

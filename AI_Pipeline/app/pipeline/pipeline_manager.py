@@ -6,8 +6,8 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from app.config import get_logger, get_settings
 from app.pipeline.stt import STTFactory
-from app.pipeline.translate import get_translator
-from app.pipeline.tts import TTSFactory
+from app.pipeline.translation_runtime import get_translator
+from app.pipeline.tts_runtime import TTSFactory
 from app.audio.audio_buffer import AudioBuffer
 from app.utils.exceptions import PipelineError
 
@@ -35,6 +35,7 @@ class PipelineManager:
         self._stt_engines: Dict[str, Any] = {}
         self._tts_engines: Dict[str, Any] = {}
         self._recognizers: Dict[str, Any] = {}
+        self._chunk_text_buffers: Dict[str, str] = {}
         
         logger.info("pipeline_manager_initialized")
     
@@ -219,7 +220,9 @@ class PipelineManager:
         self,
         text: str,
         source_lang: str,
-        target_lang: str
+        target_lang: str,
+        mode: str = "full_sentence",
+        stream_id: Optional[str] = None
     ) -> Optional[bytes]:
         """Translate text and synthesize to speech.
         
@@ -227,14 +230,36 @@ class PipelineManager:
             text: Text to translate
             source_lang: Source language
             target_lang: Target language
-            
+            mode: "chunk" for streaming fragments, "full_sentence" for complete text
+            stream_id: Optional stream key for chunk buffering
+
         Returns:
             Audio bytes or None
         """
         try:
+            normalized_mode = (mode or "full_sentence").strip().lower()
+            if normalized_mode not in {"chunk", "full_sentence"}:
+                normalized_mode = "full_sentence"
+
+            raw_text = (text or "").strip()
+            if not raw_text:
+                return None
+
+            effective_text = raw_text
+            if normalized_mode == "chunk" and stream_id:
+                # Keep small rolling context so chunk-by-chunk translation has continuity.
+                prev = self._chunk_text_buffers.get(stream_id, "")
+                merged = f"{prev} {raw_text}".strip() if prev else raw_text
+                # Bound memory and latency: keep only recent context.
+                self._chunk_text_buffers[stream_id] = merged[-600:]
+                effective_text = self._chunk_text_buffers[stream_id]
+            elif normalized_mode == "full_sentence" and stream_id:
+                # Final sentence closes the chunk stream context.
+                self._chunk_text_buffers.pop(stream_id, None)
+
             # Translate
             translated = await self.translator.translate(
-                text,
+                effective_text,
                 source_lang,
                 target_lang
             )
@@ -252,6 +277,22 @@ class PipelineManager:
                 exc_info=True
             )
             return None
+
+    async def translate_chunk_to_speech(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        stream_id: str
+    ) -> Optional[bytes]:
+        """Translate and synthesize a chunk while preserving short per-stream context."""
+        return await self.translate_text_to_speech(
+            text=text,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            mode="chunk",
+            stream_id=stream_id,
+        )
     
     def reset_recognizer(self, user_id: str, language: str) -> None:
         """Reset recognizer for user.
@@ -275,8 +316,15 @@ class PipelineManager:
         to_remove = [key for key in self._recognizers if key.startswith(f"{user_id}_")]
         for key in to_remove:
             del self._recognizers[key]
-        
-        logger.info("pipeline_user_cleanup", user_id=user_id, removed=len(to_remove))    
+
+        # Drop any chunk-text buffers associated with this user.
+        stream_prefix = f"{user_id}:"
+        stale_streams = [k for k in self._chunk_text_buffers if k.startswith(stream_prefix)]
+        for key in stale_streams:
+            del self._chunk_text_buffers[key]
+
+        logger.info("pipeline_user_cleanup", user_id=user_id, removed=len(to_remove), chunk_streams_removed=len(stale_streams))
+
     def preload_engines(
         self,
         stt_languages: Optional[list[str]] = None,
@@ -335,3 +383,4 @@ def get_pipeline_manager() -> PipelineManager:
     if _pipeline_manager is None:
         _pipeline_manager = PipelineManager()
     return _pipeline_manager
+
