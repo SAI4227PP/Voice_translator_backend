@@ -117,13 +117,13 @@ COPY --from=llama-build /work/llama.cpp /work/llama.cpp
 COPY scripts/export_svara_onnx.py /work/export_svara_onnx.py
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir huggingface_hub && \
+    pip install huggingface_hub && \
     if [ -f /work/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt ]; then \
-      pip install --no-cache-dir -r /work/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt; \
+      pip install -r /work/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt; \
     fi
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir torch transformers onnxruntime numpy
+    pip install torch transformers onnxruntime numpy
 
 RUN --mount=type=cache,target=/root/.cache/huggingface \
     python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${SARVAM_HF_MODEL_ID}', local_dir='/work/sarvam-1', token='${HF_TOKEN}' if '${HF_TOKEN}' else None, local_dir_use_symlinks=False)"
