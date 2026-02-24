@@ -16,6 +16,10 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        - HF_TOKEN=${HF_TOKEN}
+        - SARVAM_HF_MODEL_ID=${SARVAM_HF_MODEL_ID:-sarvamai/sarvam-1}
+        - SVARA_TTS_HF_MODEL_ID=${SVARA_TTS_HF_MODEL_ID:-kenpath/svara-tts-v1}
     container_name: voice-translator-app
     ports:
       - "7860:7860"

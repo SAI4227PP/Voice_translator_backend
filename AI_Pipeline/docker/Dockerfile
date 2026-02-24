@@ -130,16 +130,25 @@ RUN --mount=type=cache,target=/root/.cache/huggingface \
 
 RUN mkdir -p /work/llm-models && \
     if [ -f /work/llama.cpp/convert-hf-to-gguf.py ]; then \
-      python3 /work/llama.cpp/convert-hf-to-gguf.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1.gguf; \
-      python3 /work/llama.cpp/convert-hf-to-gguf.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-q4.gguf --quantize q4_k_m; \
+      python3 /work/llama.cpp/convert-hf-to-gguf.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-f16.gguf --outtype f16; \
     elif [ -f /work/llama.cpp/convert_hf_to_gguf.py ]; then \
-      python3 /work/llama.cpp/convert_hf_to_gguf.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1.gguf; \
-      python3 /work/llama.cpp/convert_hf_to_gguf.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-q4.gguf --outtype q4_k_m; \
+      python3 /work/llama.cpp/convert_hf_to_gguf.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-f16.gguf --outtype f16; \
     elif [ -f /work/llama.cpp/convert.py ]; then \
-      python3 /work/llama.cpp/convert.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1.gguf; \
-      python3 /work/llama.cpp/convert.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-q4.gguf --outtype q4_k_m; \
+      python3 /work/llama.cpp/convert.py /work/sarvam-1 --outfile /work/llm-models/sarvam-1-f16.gguf --outtype f16; \
     else \
       echo "ERROR: could not find llama.cpp HF->GGUF conversion script" && exit 1; \
+    fi && \
+    cp /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1.gguf && \
+    if [ -x /work/llama.cpp/build/bin/llama-quantize ]; then \
+      /work/llama.cpp/build/bin/llama-quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
+    elif [ -x /work/llama.cpp/bin/llama-quantize ]; then \
+      /work/llama.cpp/bin/llama-quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
+    elif [ -x /work/llama.cpp/build/bin/quantize ]; then \
+      /work/llama.cpp/build/bin/quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
+    elif [ -x /work/llama.cpp/bin/quantize ]; then \
+      /work/llama.cpp/bin/quantize /work/llm-models/sarvam-1-f16.gguf /work/llm-models/sarvam-1-q4.gguf Q4_K_M; \
+    else \
+      echo "ERROR: llama-quantize/quantize binary not found; cannot create q4 model" && exit 1; \
     fi
 
 RUN --mount=type=cache,target=/root/.cache/huggingface \
