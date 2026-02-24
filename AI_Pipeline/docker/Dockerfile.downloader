@@ -31,7 +31,7 @@ RUN find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} +
 # Copy download script
 COPY scripts/download_models.py scripts/download_models.py
 
-# Create models directory structure
-RUN mkdir -p models/stt models/tts/coqui-models
+# Create models directory structure used by current pipeline
+RUN mkdir -p models/stt models/tts/svara
 
 # Script will be run via docker-compose command

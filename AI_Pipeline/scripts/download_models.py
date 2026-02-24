@@ -179,10 +179,6 @@ def check_existing_models() -> Tuple[bool, List[str]]:
         if not (models_dir / lang).exists():
             missing.append(f"Vosk {lang}")
 
-    onnx_path = Path("models/tts/svara/svara_tts.onnx")
-    if not onnx_path.exists():
-        missing.append("Svara ONNX model (models/tts/svara/svara_tts.onnx)")
-
     return len(missing) == 0, missing
 
 
@@ -211,6 +207,7 @@ async def main() -> None:
     print("\n" + "=" * 70)
     print(f"Done in {mins}m {secs}s")
     print("Translation engine: Sarvam (no Argos package download)")
+    print("TTS ONNX is expected from app image build path (/app/tts-models/svara_tts.onnx) in Docker runtime.")
 
 
 if __name__ == "__main__":
