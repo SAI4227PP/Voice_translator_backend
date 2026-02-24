@@ -116,7 +116,7 @@ ARG HF_TOKEN
 COPY --from=llama-build /work/llama.cpp /work/llama.cpp
 
 RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
-    pip install huggingface_hub==0.23.5 && \
+    pip install huggingface_hub==0.36.2 && \
     if [ -f /work/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt ]; then \
       pip install -r /work/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt; \
     fi

@@ -2,7 +2,7 @@
 -r requirements.runtime.txt
 
 # Model export tooling (scripts/export_svara_onnx.py)
-torch==2.2.2
+torch==2.6.0
 transformers==4.55.4
 onnxruntime==1.18.1
 
