@@ -114,7 +114,6 @@ ARG SVARA_TTS_HF_MODEL_ID=kenpath/svara-tts-v1
 ARG HF_TOKEN
 
 COPY --from=llama-build /work/llama.cpp /work/llama.cpp
-COPY scripts/export_svara_onnx.py /work/export_svara_onnx.py
 
 RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
     pip install huggingface_hub==0.23.5 && \
@@ -128,6 +127,8 @@ RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
       transformers==4.41.2 \
       onnxruntime==1.18.1 \
       numpy==1.24.3
+
+COPY scripts/export_svara_onnx.py /work/export_svara_onnx.py
 
 RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
     --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \

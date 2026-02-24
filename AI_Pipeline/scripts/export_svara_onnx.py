@@ -17,7 +17,19 @@ import torch
 
 
 def _load_model(model_id: str):
-    from transformers import AutoModel, AutoModelForSpeechSeq2Seq
+    from transformers import AutoConfig, AutoModel, AutoModelForSpeechSeq2Seq
+
+    def _normalized_config():
+        cfg = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        rope = getattr(cfg, "rope_scaling", None)
+        if isinstance(rope, dict) and "type" not in rope and "rope_type" in rope:
+            # Backward-compatible normalization for older transformers that
+            # expect only {"type", "factor"}.
+            cfg.rope_scaling = {
+                "type": rope.get("rope_type", "dynamic"),
+                "factor": float(rope.get("factor", 1.0)),
+            }
+        return cfg
 
     last_exc: Exception | None = None
     for cls in (AutoModel, AutoModelForSpeechSeq2Seq):
@@ -43,8 +55,34 @@ def _load_model(model_id: str):
                     **common_kwargs,
                 )
             except Exception as exc:  # noqa: BLE001
+                # Retry with normalized config for rope_scaling schema mismatch.
+                if "rope_scaling" in str(exc):
+                    try:
+                        cfg = _normalized_config()
+                        return cls.from_pretrained(
+                            model_id,
+                            torch_dtype=torch.float16,
+                            config=cfg,
+                            **common_kwargs,
+                        )
+                    except Exception as retry_exc:  # noqa: BLE001
+                        last_exc = retry_exc
+                        continue
                 last_exc = exc
         except Exception as exc:  # noqa: BLE001
+            # Retry with normalized config for rope_scaling schema mismatch.
+            if "rope_scaling" in str(exc):
+                try:
+                    cfg = _normalized_config()
+                    return cls.from_pretrained(
+                        model_id,
+                        torch_dtype=torch.float16,
+                        config=cfg,
+                        **common_kwargs,
+                    )
+                except Exception as retry_exc:  # noqa: BLE001
+                    last_exc = retry_exc
+                    continue
             last_exc = exc
     raise RuntimeError(f"failed to load model {model_id}: {last_exc}")
 
