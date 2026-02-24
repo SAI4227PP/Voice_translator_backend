@@ -190,8 +190,10 @@ async def main() -> None:
     Path("models").mkdir(exist_ok=True)
 
     all_exist, missing = check_existing_models()
+    # Always validate local TTS ONNX presence, even when STT models already exist.
+    setup_tts_models()
     if all_exist:
-        print("All required model directories already exist.")
+        print("All required STT model directories already exist.")
         return
 
     print(f"Missing items: {len(missing)}")
@@ -200,7 +202,6 @@ async def main() -> None:
 
     start_time = time.time()
     await download_vosk_models()
-    setup_tts_models()
 
     elapsed = int(time.time() - start_time)
     mins, secs = divmod(elapsed, 60)
