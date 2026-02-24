@@ -1,4 +1,4 @@
-package proto
+package gen
 
 // Generate Go protobuf/grpc stubs from ../proto/voice_translator.proto
 //

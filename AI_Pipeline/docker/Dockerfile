@@ -203,7 +203,8 @@ RUN mkdir -p /go-src/go_server/proto && \
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go mod download || true
+    go mod tidy && \
+    go mod download
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
