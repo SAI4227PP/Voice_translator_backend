@@ -30,6 +30,13 @@
 #ifdef __linux__
 #include <pthread.h>
 #include <sched.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -39,16 +46,22 @@ namespace {
 struct EngineConfig {
     std::string api_base_url;
     std::string model_id;
+    std::string llama_cpp_path;
+    std::string explicit_llama_server_path;
     std::string default_voice;
     std::string api_key;
     int timeout_seconds = 90;
     int queue_size = 128;
     int worker_count = 2;
     int max_input_chars = 1200;
+    int llama_server_port = 8091;
     bool use_onnx = false;
     bool use_local_model = false;
     int onnx_sample_rate = 24000;
     int onnx_threads = 1;
+    int gguf_threads = 2;
+    int gguf_context_size = 1024;
+    bool pin_workers = false;
 };
 constexpr std::size_t kMaxOnnxTokenLength = 4096;
 constexpr std::size_t kOnnxTokenWindow = 256;
@@ -232,6 +245,67 @@ std::string truncate_text(const std::string& text, int max_chars) {
     return text.substr(0, static_cast<std::size_t>(max_chars));
 }
 
+std::string resolve_binary(
+    const std::string& base,
+    const std::vector<std::string>& rel_candidates,
+    const std::string& explicit_path
+) {
+    if (!explicit_path.empty() && explicit_path != "-") {
+        fs::path p(explicit_path);
+        if (fs::exists(p)) {
+            return p.string();
+        }
+    }
+    for (const auto& rel : rel_candidates) {
+        fs::path p = fs::path(base) / rel;
+        if (fs::exists(p)) {
+            return p.string();
+        }
+    }
+    return "";
+}
+
+std::string resolve_llama_server_path(const std::string& llama_cpp_path, const std::string& explicit_path) {
+    return resolve_binary(
+        llama_cpp_path,
+        {"bin/llama-server", "build/bin/llama-server", "llama-server", "server"},
+        explicit_path
+    );
+}
+
+#ifdef __linux__
+bool wait_for_port_ready(int port, int timeout_ms, pid_t server_pid) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (server_pid > 0) {
+            int child_status = 0;
+            const pid_t wait_rc = waitpid(server_pid, &child_status, WNOHANG);
+            if (wait_rc == server_pid) {
+                return false;
+            }
+        }
+
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(static_cast<uint16_t>(port));
+        inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+        const int ok = connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+        close(sock);
+        if (ok == 0) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return false;
+}
+#endif
+
 void emit_json_line(
     const std::string& id,
     const std::string& status,
@@ -347,8 +421,11 @@ std::pair<std::string, std::string> http_post_binary_audio(
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(payload.size()));
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+    const long timeout_ms = std::max(1000L, timeout_seconds * 1000L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 3000L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 64L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 10L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out);
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
@@ -377,6 +454,15 @@ public:
 
     int run() {
         curl_global_init(CURL_GLOBAL_DEFAULT);
+
+        if (cfg_.use_local_model && !cfg_.use_onnx) {
+            std::string init_err;
+            if (!init_local_gguf(init_err)) {
+                std::cerr << "local_gguf_init_failed: " << init_err << "\n";
+                curl_global_cleanup();
+                return 8;
+            }
+        }
 
         if (cfg_.use_onnx) {
             std::string init_err;
@@ -413,6 +499,7 @@ public:
         for (auto& w : workers_) {
             if (w.joinable()) w.join();
         }
+        stop_local_gguf();
         curl_global_cleanup();
         return 0;
     }
@@ -429,6 +516,7 @@ private:
 
     void bind_worker_affinity(int worker_index) {
 #ifdef __linux__
+        if (!cfg_.pin_workers) return;
         const unsigned int hw = std::thread::hardware_concurrency();
         if (hw == 0) return;
         cpu_set_t cpuset;
@@ -437,6 +525,70 @@ private:
         pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
 #else
         (void)worker_index;
+#endif
+    }
+
+    bool init_local_gguf(std::string& err) {
+#ifdef __linux__
+        const std::string llama_server =
+            resolve_llama_server_path(cfg_.llama_cpp_path, cfg_.explicit_llama_server_path);
+        if (llama_server.empty()) {
+            err = "llama_server_not_found_in_llama_cpp_path";
+            return false;
+        }
+        if (!fs::exists(cfg_.model_id)) {
+            err = "local_model_not_found";
+            return false;
+        }
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            err = "fork_failed";
+            return false;
+        }
+        if (pid == 0) {
+            const std::string port_s = std::to_string(cfg_.llama_server_port);
+            const std::string threads_s = std::to_string(std::max(1, cfg_.gguf_threads));
+            const std::string context_s = std::to_string(std::max(256, cfg_.gguf_context_size));
+            std::vector<char*> args;
+            args.push_back(const_cast<char*>(llama_server.c_str()));
+            args.push_back(const_cast<char*>("-m"));
+            args.push_back(const_cast<char*>(cfg_.model_id.c_str()));
+            args.push_back(const_cast<char*>("-t"));
+            args.push_back(const_cast<char*>(threads_s.c_str()));
+            args.push_back(const_cast<char*>("-c"));
+            args.push_back(const_cast<char*>(context_s.c_str()));
+            args.push_back(const_cast<char*>("--host"));
+            args.push_back(const_cast<char*>("127.0.0.1"));
+            args.push_back(const_cast<char*>("--port"));
+            args.push_back(const_cast<char*>(port_s.c_str()));
+            args.push_back(nullptr);
+            execv(llama_server.c_str(), args.data());
+            _exit(127);
+        }
+
+        llama_server_pid_ = pid;
+        if (!wait_for_port_ready(cfg_.llama_server_port, 30000, llama_server_pid_)) {
+            stop_local_gguf();
+            err = "llama_server_start_failed_or_timed_out";
+            return false;
+        }
+        local_api_base_ = "http://127.0.0.1:" + std::to_string(cfg_.llama_server_port) + "/v1";
+        return true;
+#else
+        err = "local_gguf_mode_is_supported_only_on_linux";
+        return false;
+#endif
+    }
+
+    void stop_local_gguf() {
+#ifdef __linux__
+        if (llama_server_pid_ > 0) {
+            kill(llama_server_pid_, SIGTERM);
+            int status = 0;
+            waitpid(llama_server_pid_, &status, 0);
+            llama_server_pid_ = -1;
+        }
 #endif
     }
 
@@ -555,6 +707,12 @@ private:
     }
 
     bool enqueue(Request req) {
+        const std::uint64_t qsize_now = queue_size_.load(std::memory_order_acquire);
+        const std::uint64_t high_water =
+            queue_capacity_ > 1 ? (queue_capacity_ - std::max<std::size_t>(1, queue_capacity_ / 10)) : 1;
+        if (qsize_now >= high_water) {
+            return false;
+        }
         for (;;) {
             std::uint64_t tail = queue_tail_.load(std::memory_order_relaxed);
             const std::uint64_t head = queue_head_.load(std::memory_order_acquire);
@@ -663,6 +821,30 @@ private:
         }
     }
 
+    std::pair<std::string, std::string> synthesize_local_gguf(const std::string& text, const std::string& language) {
+        const std::string clean_text = truncate_text(trim(text), cfg_.max_input_chars);
+        if (clean_text.empty()) {
+            return {"", "empty_text"};
+        }
+        if (local_api_base_.empty()) {
+            return {"", "local_gguf_runtime_not_initialized"};
+        }
+
+        thread_local std::string payload;
+        payload.clear();
+        payload.reserve(256 + clean_text.size());
+        payload += "{";
+        payload += "\"model\":\"" + json_escape(cfg_.model_id) + "\",";
+        payload += "\"input\":\"" + json_escape(clean_text) + "\",";
+        payload += "\"voice\":\"" + json_escape(cfg_.default_voice) + "\",";
+        payload += "\"language\":\"" + json_escape(language) + "\",";
+        payload += "\"response_format\":\"wav\"";
+        payload += "}";
+
+        const std::string url = local_api_base_ + "/audio/speech";
+        return http_post_binary_audio(url, payload, cfg_.api_key, cfg_.timeout_seconds);
+    }
+
     std::pair<std::string, std::string> synthesize(
         const std::string& text,
         const std::string& language,
@@ -694,7 +876,7 @@ private:
 #endif
         }
         if (cfg_.use_local_model) {
-            return {"", "local_non_onnx_tts_not_implemented"};
+            return synthesize_local_gguf(text, language);
         }
 
         const std::string clean_text = truncate_text(trim(text), cfg_.max_input_chars);
@@ -790,23 +972,33 @@ private:
 #ifdef TTS_ENGINE_ENABLE_ONNX
     std::unique_ptr<OnnxRuntimeState> onnx_;
 #endif
+    std::string local_api_base_;
+#ifdef __linux__
+    pid_t llama_server_pid_ = -1;
+#endif
 };
 
 EngineConfig parse_daemon_config(int argc, char* argv[]) {
     EngineConfig cfg;
-    // daemon api_base model voice timeout queue workers max_input api_key_or_dash [onnx_threads] [onnx_sample_rate]
+    // daemon api_base model voice timeout queue workers max_input api_key_or_dash [onnx_threads] [onnx_sample_rate] [llama_cpp_path] [llama_server_port] [explicit_llama_server_path] [gguf_threads] [gguf_context_size] [pin_workers]
     cfg.api_base_url = (argc > 2) ? argv[2] : "";
     cfg.model_id = (argc > 3) ? argv[3] : "";
     cfg.default_voice = (argc > 4) ? argv[4] : "anushka";
     cfg.timeout_seconds = (argc > 5) ? std::atoi(argv[5]) : 90;
     cfg.queue_size = (argc > 6) ? std::atoi(argv[6]) : 128;
     cfg.worker_count = (argc > 7) ? std::atoi(argv[7]) : 2;
-    cfg.max_input_chars = (argc > 8) ? std::atoi(argv[8]) : 1200;
+    cfg.max_input_chars = (argc > 8) ? std::atoi(argv[8]) : 600;
     cfg.api_key = (argc > 9) ? argv[9] : "-";
     cfg.onnx_threads = (argc > 10) ? std::max(1, std::atoi(argv[10])) : 1;
     cfg.onnx_sample_rate = (argc > 11) ? std::max(8000, std::atoi(argv[11])) : 24000;
+    cfg.llama_cpp_path = (argc > 12) ? argv[12] : "/app/llama.cpp";
+    cfg.llama_server_port = (argc > 13) ? std::max(1, std::atoi(argv[13])) : 8091;
+    cfg.explicit_llama_server_path = (argc > 14) ? argv[14] : "-";
+    cfg.gguf_threads = (argc > 15) ? std::max(1, std::atoi(argv[15])) : 2;
+    cfg.gguf_context_size = (argc > 16) ? std::max(256, std::atoi(argv[16])) : 1024;
+    cfg.pin_workers = (argc > 17) ? (to_lower(trim(argv[17])) == "true" || trim(argv[17]) == "1") : false;
     cfg.use_local_model = fs::exists(cfg.model_id);
-    cfg.use_onnx = cfg.use_local_model && ends_with(to_lower(trim(cfg.model_id)), ".onnx");
+    cfg.use_onnx = false;  // GGUF-only mode
     return cfg;
 }
 
@@ -824,6 +1016,11 @@ int tts_engine::run_tts_engine(int argc, char* argv[]) {
             std::cerr << "missing_model\n";
             return 2;
         }
+        if (cfg.use_local_model && !cfg.use_onnx &&
+            !ends_with(to_lower(trim(cfg.model_id)), ".gguf")) {
+            std::cerr << "invalid_local_model_extension_expected_gguf\n";
+            return 2;
+        }
         if (!cfg.use_onnx && !cfg.use_local_model && cfg.api_base_url.empty()) {
             std::cerr << "missing_api_url_for_http_mode\n";
             return 2;
@@ -833,23 +1030,27 @@ int tts_engine::run_tts_engine(int argc, char* argv[]) {
     }
     if (mode == "validate") {
         if (argc < 4) {
-            std::cerr << "Usage: tts_engine validate <api_base_url_or_dash> <model_id_or_onnx_path>\n";
+            std::cerr << "Usage: tts_engine validate <api_base_url_or_dash> <model_id_or_gguf_path> [llama_cpp_path] [explicit_llama_server_path]\n";
             return 2;
         }
         const std::string api_base = argv[2];
         const std::string model_id = argv[3];
+        const std::string llama_cpp_path = (argc > 4) ? argv[4] : "/app/llama.cpp";
+        const std::string explicit_llama_server_path = (argc > 5) ? argv[5] : "-";
         if (trim(model_id).empty()) {
             std::cerr << "invalid_configuration\n";
             return 2;
         }
         const bool is_local_model = fs::exists(model_id);
-        const bool is_local_onnx = is_local_model && ends_with(to_lower(trim(model_id)), ".onnx");
         if (is_local_model) {
-            if (is_local_onnx) {
-                if (!fs::exists(model_id)) {
-                    std::cerr << "onnx_model_not_found\n";
-                    return 2;
-                }
+            if (!ends_with(to_lower(trim(model_id)), ".gguf")) {
+                std::cerr << "invalid_local_model_extension_expected_gguf\n";
+                return 2;
+            }
+            const std::string server = resolve_llama_server_path(llama_cpp_path, explicit_llama_server_path);
+            if (server.empty()) {
+                std::cerr << "llama_server_not_found_for_local_gguf_mode\n";
+                return 2;
             }
         } else if (trim(api_base).empty() || api_base == "-") {
             std::cerr << "invalid_api_base_for_http_mode\n";

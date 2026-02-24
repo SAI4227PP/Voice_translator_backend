@@ -62,13 +62,14 @@ func (t *SvaraTTS) Synthesize(language, text string) ([]byte, error) {
 
 func (t *SvaraTTS) ensureStarted() error {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.started && t.cmd != nil && t.cmd.Process != nil {
+		t.mu.Unlock()
 		return nil
 	}
 
 	apiBase, modelRef, err := resolveTTSRuntimeConfig(t.settings)
 	if err != nil {
+		t.mu.Unlock()
 		return err
 	}
 
@@ -77,8 +78,11 @@ func (t *SvaraTTS) ensureStarted() error {
 		"validate",
 		apiBase,
 		modelRef,
+		valueOrDash(t.settings.LlamaCppPath, "/app/llama.cpp"),
+		"-",
 	)
 	if out, err := validate.CombinedOutput(); err != nil {
+		t.mu.Unlock()
 		return fmt.Errorf("tts validation failed: %s (%w)", strings.TrimSpace(string(out)), err)
 	}
 
@@ -94,21 +98,31 @@ func (t *SvaraTTS) ensureStarted() error {
 		valueOrDash(t.settings.SvaraAPIKey, "-"),
 		fmt.Sprintf("%d", t.settings.SvaraOnnxThreads),
 		fmt.Sprintf("%d", t.settings.SvaraOnnxSampleRate),
+		valueOrDash(t.settings.LlamaCppPath, "/app/llama.cpp"),
+		fmt.Sprintf("%d", t.settings.LlamaServerPort+1),
+		"-",
+		fmt.Sprintf("%d", t.settings.SvaraThreads),
+		fmt.Sprintf("%d", t.settings.SvaraContextSize),
+		fmt.Sprintf("%t", t.settings.SvaraPinWorkers),
 	}
 	cmd := exec.Command(t.settings.SvaraCppBinaryPath, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		t.mu.Unlock()
 		return err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		t.mu.Unlock()
 		return err
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		t.mu.Unlock()
 		return err
 	}
 	if err := cmd.Start(); err != nil {
+		t.mu.Unlock()
 		return err
 	}
 
@@ -118,6 +132,10 @@ func (t *SvaraTTS) ensureStarted() error {
 	t.started = true
 	go t.readLoop()
 	go io.Copy(io.Discard, stderr)
+	t.mu.Unlock()
+
+	// One-time daemon warm-up to avoid first user request latency spikes.
+	_, _ = t.sendRequest("warm_up", "hi", "Hello")
 	return nil
 }
 

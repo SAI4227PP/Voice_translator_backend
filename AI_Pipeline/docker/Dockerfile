@@ -110,7 +110,7 @@ FROM build-base AS model-build
 WORKDIR /work
 
 ARG SARVAM_HF_MODEL_ID=sarvamai/sarvam-1
-ARG SVARA_TTS_GGUF_HF_REPO=mradermacher/svara-tts-v1-GGUF
+ARG SVARA_TTS_HF_MODEL_ID=kenpath/svara-tts-v1
 ARG SVARA_TTS_GGUF_FILE=svara-tts-v1.Q5_K_M.gguf
 ARG HF_TOKEN
 
@@ -149,7 +149,17 @@ RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
     else \
       python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${SARVAM_HF_MODEL_ID}', local_dir='/work/model-cache/sarvam-1', token='${HF_TOKEN}' if '${HF_TOKEN}' else None, local_dir_use_symlinks=False)"; \
     fi && \
-    rm -rf /work/sarvam-1 && cp -a /work/model-cache/sarvam-1 /work/sarvam-1
+    rm -rf /work/sarvam-1 && cp -a /work/model-cache/sarvam-1/. /work/sarvam-1/
+
+RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
+    --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
+    mkdir -p /work/model-cache/svara-tts-hf && \
+    if [ -f /work/model-cache/svara-tts-hf/config.json ]; then \
+      echo "Using cached Svara HF snapshot"; \
+    else \
+      python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${SVARA_TTS_HF_MODEL_ID}', local_dir='/work/model-cache/svara-tts-hf', token='${HF_TOKEN}' if '${HF_TOKEN}' else None, local_dir_use_symlinks=False)"; \
+    fi && \
+    rm -rf /work/svara-tts && cp -a /work/model-cache/svara-tts-hf/. /work/svara-tts/
 
 RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
     set -eu; \
@@ -186,17 +196,40 @@ RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
       cp /work/llm-models/sarvam-1-q4.gguf /work/model-cache/sarvam-1-q4.gguf; \
     fi
 
-RUN --mount=type=cache,id=vtb-hf-cache,target=/root/.cache/huggingface \
-    --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
+RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
     set -eu; \
-    mkdir -p /work/llm-models /work/model-cache/svara-gguf && \
+    mkdir -p /work/llm-models /work/model-cache && \
     if [ -f "/work/model-cache/${SVARA_TTS_GGUF_FILE}" ]; then \
       echo "Using cached Svara GGUF artifact"; \
+      cp "/work/model-cache/${SVARA_TTS_GGUF_FILE}" "/work/llm-models/${SVARA_TTS_GGUF_FILE}"; \
     else \
-      python3 -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='${SVARA_TTS_GGUF_HF_REPO}', local_dir='/work/model-cache/svara-gguf', allow_patterns=['${SVARA_TTS_GGUF_FILE}'], token='${HF_TOKEN}' if '${HF_TOKEN}' else None, local_dir_use_symlinks=False)" && \
-      cp "/work/model-cache/svara-gguf/${SVARA_TTS_GGUF_FILE}" "/work/model-cache/${SVARA_TTS_GGUF_FILE}"; \
-    fi && \
-    cp "/work/model-cache/${SVARA_TTS_GGUF_FILE}" "/work/llm-models/${SVARA_TTS_GGUF_FILE}"
+      # Build FP16 GGUF backbone first, then quantize that backbone artifact.
+      # This follows the GGUF flow (Q4/Q5/Q6) and does not imply quantizing
+      # non-GGUF custom decoder components.
+      if [ -f /work/llama.cpp/convert-hf-to-gguf.py ]; then \
+        python3 /work/llama.cpp/convert-hf-to-gguf.py /work/svara-tts --outfile /work/llm-models/svara-tts-v1-backbone-f16.gguf --outtype f16; \
+      elif [ -f /work/llama.cpp/convert_hf_to_gguf.py ]; then \
+        python3 /work/llama.cpp/convert_hf_to_gguf.py /work/svara-tts --outfile /work/llm-models/svara-tts-v1-backbone-f16.gguf --outtype f16; \
+      elif [ -f /work/llama.cpp/convert.py ]; then \
+        python3 /work/llama.cpp/convert.py /work/svara-tts --outfile /work/llm-models/svara-tts-v1-backbone-f16.gguf --outtype f16; \
+      else \
+        echo "ERROR: could not find llama.cpp HF->GGUF conversion script for Svara" && exit 1; \
+      fi; \
+      [ -f /work/llm-models/svara-tts-v1-backbone-f16.gguf ]; \
+      if [ -x /work/llama.cpp/build/bin/llama-quantize ]; then \
+        /work/llama.cpp/build/bin/llama-quantize /work/llm-models/svara-tts-v1-backbone-f16.gguf "/work/llm-models/${SVARA_TTS_GGUF_FILE}" Q5_K_M; \
+      elif [ -x /work/llama.cpp/bin/llama-quantize ]; then \
+        /work/llama.cpp/bin/llama-quantize /work/llm-models/svara-tts-v1-backbone-f16.gguf "/work/llm-models/${SVARA_TTS_GGUF_FILE}" Q5_K_M; \
+      elif [ -x /work/llama.cpp/build/bin/quantize ]; then \
+        /work/llama.cpp/build/bin/quantize /work/llm-models/svara-tts-v1-backbone-f16.gguf "/work/llm-models/${SVARA_TTS_GGUF_FILE}" Q5_K_M; \
+      elif [ -x /work/llama.cpp/bin/quantize ]; then \
+        /work/llama.cpp/bin/quantize /work/llm-models/svara-tts-v1-backbone-f16.gguf "/work/llm-models/${SVARA_TTS_GGUF_FILE}" Q5_K_M; \
+      else \
+        echo "ERROR: llama-quantize/quantize binary not found; cannot create Svara GGUF quantized model" && exit 1; \
+      fi; \
+      [ -f "/work/llm-models/${SVARA_TTS_GGUF_FILE}" ]; \
+      cp "/work/llm-models/${SVARA_TTS_GGUF_FILE}" "/work/model-cache/${SVARA_TTS_GGUF_FILE}"; \
+    fi
 
 RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
     set -eu; \
@@ -331,10 +364,13 @@ ENV HOST=0.0.0.0 \
     SVARA_TTS_API_BASE_URL= \
     SVARA_TTS_API_KEY= \
     SVARA_TTS_TIMEOUT_SECONDS=90 \
-    SVARA_TTS_MAX_INPUT_CHARS=1200 \
+    SVARA_TTS_MAX_INPUT_CHARS=600 \
     SVARA_TTS_DEFAULT_VOICE=anushka \
     SVARA_TTS_DAEMON_WORKERS=2 \
     SVARA_TTS_DAEMON_QUEUE_SIZE=128 \
+    SVARA_TTS_THREADS=2 \
+    SVARA_TTS_CONTEXT_SIZE=1024 \
+    SVARA_TTS_PIN_WORKERS=false \
     GO_SERVER_BINARY_PATH=/app/go_server/voice-translator-go-server \
     GRPC_PORT=50051 \
     NUMBA_CACHE_DIR=/tmp/numba_cache \

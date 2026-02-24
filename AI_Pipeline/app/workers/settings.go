@@ -32,4 +32,7 @@ type Settings struct {
 	SvaraAPIKey          string
 	SvaraOnnxThreads     int
 	SvaraOnnxSampleRate  int
+	SvaraThreads         int
+	SvaraContextSize     int
+	SvaraPinWorkers      bool
 }

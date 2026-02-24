@@ -986,5 +986,8 @@ func toWorkerSettings(s config.Settings) workers.Settings {
 		SvaraAPIKey:          s.SvaraAPIKey,
 		SvaraOnnxThreads:     s.SvaraOnnxThreads,
 		SvaraOnnxSampleRate:  s.SvaraOnnxSampleRate,
+		SvaraThreads:         s.SvaraThreads,
+		SvaraContextSize:     s.SvaraContextSize,
+		SvaraPinWorkers:      s.SvaraPinWorkers,
 	}
 }

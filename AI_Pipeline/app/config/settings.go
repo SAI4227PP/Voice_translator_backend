@@ -82,6 +82,9 @@ type Settings struct {
 	SvaraTokenizerID      string
 	SvaraOnnxThreads      int
 	SvaraOnnxSampleRate   int
+	SvaraThreads          int
+	SvaraContextSize      int
+	SvaraPinWorkers       bool
 	TTSEnableWarmStart    bool
 	TTSPreloadLanguages   string
 	TTSPreloadLangsParsed []string
@@ -174,7 +177,7 @@ func LoadSettings() Settings {
 		SvaraAPIBaseURL:      env("SVARA_TTS_API_BASE_URL", ""),
 		SvaraAPIKey:          env("SVARA_TTS_API_KEY", ""),
 		SvaraTimeoutSeconds:  envInt("SVARA_TTS_TIMEOUT_SECONDS", 90),
-		SvaraMaxInputChars:   envInt("SVARA_TTS_MAX_INPUT_CHARS", 1200),
+		SvaraMaxInputChars:   envInt("SVARA_TTS_MAX_INPUT_CHARS", 600),
 		SvaraDefaultVoice:    env("SVARA_TTS_DEFAULT_VOICE", "anushka"),
 		SvaraCppBinaryPath:   env("SVARA_TTS_CPP_BINARY_PATH", "/app/app/pipeline/tts/tts_engine"),
 		SvaraDaemonWorkers:   envInt("SVARA_TTS_DAEMON_WORKERS", envInt("TTS_DAEMON_WORKERS", 2)),
@@ -183,6 +186,9 @@ func LoadSettings() Settings {
 		SvaraTokenizerID:     env("SVARA_TTS_TOKENIZER_ID", "kenpath/svara-tts-v1"),
 		SvaraOnnxThreads:     envInt("SVARA_TTS_ONNX_THREADS", envInt("ONNX_THREADS", 1)),
 		SvaraOnnxSampleRate:  envInt("SVARA_TTS_ONNX_SAMPLE_RATE", envInt("ONNX_SAMPLE_RATE", 24000)),
+		SvaraThreads:         envInt("SVARA_TTS_THREADS", 2),
+		SvaraContextSize:     envInt("SVARA_TTS_CONTEXT_SIZE", 1024),
+		SvaraPinWorkers:      envBool("SVARA_TTS_PIN_WORKERS", false),
 		TTSEnableWarmStart:   envBool("TTS_ENABLE_WARM_START", true),
 		TTSPreloadLanguages:  env("TTS_PRELOAD_LANGUAGES", "en,hi,ta,bn"),
 		STTEnableWarmStart:   envBool("STT_ENABLE_WARM_START", true),

@@ -19,7 +19,7 @@ services:
       args:
         - HF_TOKEN=${HF_TOKEN:-}
         - SARVAM_HF_MODEL_ID=${SARVAM_HF_MODEL_ID:-sarvamai/sarvam-1}
-        - SVARA_TTS_GGUF_HF_REPO=${SVARA_TTS_GGUF_HF_REPO:-mradermacher/svara-tts-v1-GGUF}
+        - SVARA_TTS_HF_MODEL_ID=${SVARA_TTS_HF_MODEL_ID:-kenpath/svara-tts-v1}
         - SVARA_TTS_GGUF_FILE=${SVARA_TTS_GGUF_FILE:-svara-tts-v1.Q5_K_M.gguf}
     container_name: voice-translator-app
     ports:
@@ -70,10 +70,13 @@ services:
       - SVARA_TTS_API_BASE_URL=
       - SVARA_TTS_API_KEY=
       - SVARA_TTS_TIMEOUT_SECONDS=90
-      - SVARA_TTS_MAX_INPUT_CHARS=1200
+      - SVARA_TTS_MAX_INPUT_CHARS=600
       - SVARA_TTS_DEFAULT_VOICE=anushka
       - SVARA_TTS_DAEMON_WORKERS=2
       - SVARA_TTS_DAEMON_QUEUE_SIZE=128
+      - SVARA_TTS_THREADS=2
+      - SVARA_TTS_CONTEXT_SIZE=1024
+      - SVARA_TTS_PIN_WORKERS=false
       - TTS_ENABLE_WARM_START=True
       - TTS_PRELOAD_LANGUAGES=en,hi,bn,ta
     restart: unless-stopped
