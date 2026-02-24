@@ -279,7 +279,6 @@ ENV HOST=0.0.0.0 \
     SVARA_TTS_DAEMON_WORKERS=2 \
     SVARA_TTS_DAEMON_QUEUE_SIZE=128 \
     GO_SERVER_BINARY_PATH=/app/go_server/voice-translator-go-server \
-    GRPC_ENABLED=false \
     GRPC_PORT=50051 \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
     XDG_CACHE_HOME=/tmp \
@@ -289,7 +288,7 @@ ENV HOST=0.0.0.0 \
 
 USER appuser
 
-EXPOSE 7860
+EXPOSE 7860 50051
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:7860/health || exit 1

@@ -25,7 +25,6 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=7860
-      - GRPC_ENABLED=True
       - GRPC_PORT=50051
       - LOG_LEVEL=INFO
       - ENVIRONMENT=production
