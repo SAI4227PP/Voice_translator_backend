@@ -72,11 +72,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 FROM build-base AS python-deps
 WORKDIR /app
 
-COPY requirements.txt .
+COPY requirements.runtime.txt .
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
+    pip install --upgrade pip setuptools wheel && \
+    pip install -r requirements.runtime.txt
 
 RUN find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
     find /usr/local/lib/python3.11 -type f -name "*.pyc" -delete
@@ -122,10 +122,11 @@ RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
     fi
 
 RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
-    pip install \
-      --upgrade \
-      --force-reinstall \
-      torch==2.2.2 \
+    pip install --upgrade --force-reinstall \
+      --index-url https://download.pytorch.org/whl/cpu \
+      --extra-index-url https://pypi.org/simple \
+      torch==2.2.2 && \
+    pip install --upgrade --force-reinstall \
       transformers==4.55.4 \
       onnxruntime==1.18.1 \
       numpy==1.24.3
