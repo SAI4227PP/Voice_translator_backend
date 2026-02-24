@@ -89,12 +89,16 @@ WORKDIR /work
 
 RUN --mount=type=cache,target=/root/.cache/ccache \
     git clone --depth 1 https://github.com/ggerganov/llama.cpp /work/llama.cpp && \
-    CC="ccache gcc" CXX="ccache g++" make -C /work/llama.cpp LLAMA_BLAS=1 LLAMA_BLAS_VENDOR=OpenBLAS && \
+    CC="ccache gcc" CXX="ccache g++" cmake -S /work/llama.cpp -B /work/llama.cpp/build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DGGML_BLAS=ON \
+      -DGGML_BLAS_VENDOR=OpenBLAS && \
+    cmake --build /work/llama.cpp/build -j"$(nproc)" && \
     mkdir -p /work/llama-runtime/bin && \
-    if [ -d /work/llama.cpp/bin ]; then \
-      cp -a /work/llama.cpp/bin/. /work/llama-runtime/bin/; \
-    elif [ -d /work/llama.cpp/build/bin ]; then \
+    if [ -d /work/llama.cpp/build/bin ]; then \
       cp -a /work/llama.cpp/build/bin/. /work/llama-runtime/bin/; \
+    elif [ -d /work/llama.cpp/bin ]; then \
+      cp -a /work/llama.cpp/bin/. /work/llama-runtime/bin/; \
     else \
       echo "ERROR: llama.cpp binaries not found in bin/ or build/bin/" && exit 1; \
     fi
@@ -232,8 +236,8 @@ COPY --from=model-build /work/llm-models/ /app/llm-models/
 COPY --from=model-build /work/tts-models/svara_tts.onnx /app/tts-models/svara_tts.onnx
 
 # Copy compiled C++ daemons only
-COPY --from=cpp-build /app/app/pipeline/translate/build/translate_engine /app/app/pipeline/translate/translate_engine
-COPY --from=cpp-build /app/app/pipeline/tts/build/tts_engine /app/app/pipeline/tts/tts_engine
+COPY --from=cpp-build /app/app/pipeline/translate/translate_engine /app/app/pipeline/translate/translate_engine
+COPY --from=cpp-build /app/app/pipeline/tts/tts_engine /app/app/pipeline/tts/tts_engine
 COPY --from=go-build /out/voice-translator-go-server /app/go_server/voice-translator-go-server
 
 RUN mkdir -p logs data models /tmp /app/.local && \
