@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import inspect
 from pathlib import Path
 
@@ -17,19 +18,33 @@ import torch
 
 
 def _load_model(model_id: str):
-    from transformers import AutoConfig, AutoModel, AutoModelForSpeechSeq2Seq
+    from huggingface_hub import hf_hub_download
+    from transformers import AutoConfig, AutoModel, AutoModelForSpeechSeq2Seq, LlamaConfig
 
     def _normalized_config():
-        cfg = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-        rope = getattr(cfg, "rope_scaling", None)
-        if isinstance(rope, dict) and "type" not in rope and "rope_type" in rope:
-            # Backward-compatible normalization for older transformers that
-            # expect only {"type", "factor"}.
-            cfg.rope_scaling = {
-                "type": rope.get("rope_type", "dynamic"),
-                "factor": float(rope.get("factor", 1.0)),
-            }
-        return cfg
+        try:
+            cfg = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+            rope = getattr(cfg, "rope_scaling", None)
+            if isinstance(rope, dict) and "type" not in rope and "rope_type" in rope:
+                # Backward-compatible normalization for older transformers that
+                # expect only {"type", "factor"}.
+                cfg.rope_scaling = {
+                    "type": rope.get("rope_type", "dynamic"),
+                    "factor": float(rope.get("factor", 1.0)),
+                }
+            return cfg
+        except Exception:
+            # Some older transformers fail before returning AutoConfig for Llama3
+            # rope_scaling schema. Load raw config and normalize manually.
+            cfg_path = hf_hub_download(repo_id=model_id, filename="config.json")
+            data = json.loads(Path(cfg_path).read_text(encoding="utf-8"))
+            rope = data.get("rope_scaling")
+            if isinstance(rope, dict) and "type" not in rope and "rope_type" in rope:
+                data["rope_scaling"] = {
+                    "type": rope.get("rope_type", "dynamic"),
+                    "factor": float(rope.get("factor", 1.0)),
+                }
+            return LlamaConfig.from_dict(data)
 
     last_exc: Exception | None = None
     for cls in (AutoModel, AutoModelForSpeechSeq2Seq):
@@ -94,6 +109,9 @@ def _load_tokenizer(model_id: str):
 
 
 def export_onnx(model_id: str, output: Path, opset: int = 17) -> None:
+    import transformers
+
+    print(f"torch={torch.__version__} transformers={transformers.__version__}")
     print(f"Loading model: {model_id}")
     model = _load_model(model_id)
     model = model.half()

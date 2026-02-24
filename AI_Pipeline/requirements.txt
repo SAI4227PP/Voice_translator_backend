@@ -7,7 +7,7 @@ PyJWT==2.8.0
 
 # Model export tooling (scripts/export_svara_onnx.py)
 torch==2.2.2
-transformers==4.41.2
+transformers==4.55.4
 onnxruntime==1.18.1
 
 # Test deps used by current tests/*

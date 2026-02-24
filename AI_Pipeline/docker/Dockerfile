@@ -123,10 +123,24 @@ RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
 
 RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
     pip install \
+      --upgrade \
+      --force-reinstall \
       torch==2.2.2 \
-      transformers==4.41.2 \
+      transformers==4.55.4 \
       onnxruntime==1.18.1 \
       numpy==1.24.3
+
+RUN python3 - <<'PY'
+import torch, transformers, onnxruntime, numpy
+print("torch", torch.__version__)
+print("transformers", transformers.__version__)
+print("onnxruntime", onnxruntime.__version__)
+print("numpy", numpy.__version__)
+assert transformers.__version__ == "4.55.4", f"unexpected transformers version: {transformers.__version__}"
+assert torch.__version__.startswith("2.2.2"), f"unexpected torch version: {torch.__version__}"
+assert onnxruntime.__version__ == "1.18.1", f"unexpected onnxruntime version: {onnxruntime.__version__}"
+assert numpy.__version__ == "1.24.3", f"unexpected numpy version: {numpy.__version__}"
+PY
 
 COPY scripts/export_svara_onnx.py /work/export_svara_onnx.py
 
