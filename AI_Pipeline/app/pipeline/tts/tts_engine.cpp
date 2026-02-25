@@ -764,6 +764,7 @@ private:
 
         if (pid == 0) {
             dup2(err_fd, STDERR_FILENO);
+            dup2(err_fd, STDOUT_FILENO);
             close(err_fd);
             const std::string threads_s = std::to_string(std::max(1, cfg_.gguf_threads));
             const std::string context_s = std::to_string(std::max(256, cfg_.gguf_context_size));
@@ -826,10 +827,11 @@ private:
             unlink(wav_path.c_str());
             const std::string brief = summarize_stderr(err_text);
             const std::string model_meta = " model=" + cfg_.model_id + " vocoder=" + (cfg_.vocoder_model.empty() ? "-" : cfg_.vocoder_model);
+            const int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
             if (!brief.empty()) {
-                return {"", "llama_tts_failed" + model_meta + " stderr=" + brief};
+                return {"", "llama_tts_failed" + model_meta + " exit_code=" + std::to_string(code) + " stderr=" + brief};
             }
-            return {"", "llama_tts_failed" + model_meta};
+            return {"", "llama_tts_failed" + model_meta + " exit_code=" + std::to_string(code)};
         }
 
         std::ifstream wav_in(wav_path, std::ios::in | std::ios::binary);
