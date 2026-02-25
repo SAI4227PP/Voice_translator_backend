@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1.4
+# Note: COMPOSE_BAKE=true is a Docker Compose performance hint, not an error.
 
 # ======================================================
 # Voice-to-Voice Translator - Production Image
