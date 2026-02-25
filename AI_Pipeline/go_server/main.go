@@ -911,20 +911,30 @@ func (a *appState) translateText(text, source, target string) (string, error) {
 
 	timeoutSec := a.settings.SarvamTimeout
 	if timeoutSec <= 0 {
-		timeoutSec = 120
+		timeoutSec = 30
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+	retries := a.settings.TranslationRetryCount
+	if retries < 0 {
+		retries = 0
+	}
+	// Budget must cover worker retries; otherwise gRPC can time out before retries finish.
+	totalTimeoutSec := timeoutSec*(retries+1) + 5
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(totalTimeoutSec)*time.Second)
 	defer cancel()
 
+	start := time.Now()
 	resp, err := a.translationGRPC.Translate(ctx, &pb.TranslationRequest{
 		Text:       text,
 		SourceLang: source,
 		TargetLang: target,
 	})
 	if err != nil {
-		log.Printf("http_translate_grpc_failed source=%s target=%s error=%v", source, target, err)
+		log.Printf("http_translate_grpc_failed source=%s target=%s timeout_sec=%d elapsed_ms=%.2f error=%v",
+			source, target, totalTimeoutSec, roundMs(start), err)
 		return "", err
 	}
+	log.Printf("http_translate_grpc_ok source=%s target=%s timeout_sec=%d elapsed_ms=%.2f",
+		source, target, totalTimeoutSec, roundMs(start))
 	return resp.GetTranslatedText(), nil
 }
 
@@ -935,9 +945,14 @@ func (a *appState) batchTranslateTexts(texts []string, source, target string) ([
 
 	timeoutSec := a.settings.SarvamTimeout
 	if timeoutSec <= 0 {
-		timeoutSec = 120
+		timeoutSec = 30
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+	retries := a.settings.TranslationRetryCount
+	if retries < 0 {
+		retries = 0
+	}
+	totalTimeoutSec := timeoutSec*(retries+1) + 5
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(totalTimeoutSec)*time.Second)
 	defer cancel()
 
 	stream, err := a.translationGRPC.TranslateStream(ctx)
