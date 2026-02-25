@@ -171,7 +171,10 @@ func (s *Service) Translate(_ context.Context, req *pb.TranslationRequest) (*pb.
 
 	source := normalizeLangCode(req.GetSourceLang())
 	target := normalizeLangCode(req.GetTargetLang())
+	start := time.Now()
+	log.Printf("grpc_translate_start source=%s target=%s text_len=%d", source, target, len(req.GetText()))
 	if strings.EqualFold(source, target) {
+		log.Printf("grpc_translate_done source=%s target=%s elapsed_ms=0 out_len=%d same_language=true", source, target, len(req.GetText()))
 		return &pb.TranslationResponse{
 			OriginalText:     req.GetText(),
 			TranslatedText:   req.GetText(),
@@ -183,16 +186,16 @@ func (s *Service) Translate(_ context.Context, req *pb.TranslationRequest) (*pb.
 		}, nil
 	}
 
-	start := time.Now()
 	translated, err := s.deps.Translator.Translate(req.GetText(), source, target)
 	if err != nil {
-		log.Printf("grpc_translate_failed source=%s target=%s error=%v", source, target, err)
+		log.Printf("grpc_translate_failed source=%s target=%s elapsed_ms=%d error=%v", source, target, time.Since(start).Milliseconds(), err)
 		return nil, mapWorkerError(err)
 	}
 	if strings.TrimSpace(translated) == "" && !strings.EqualFold(source, target) {
-		log.Printf("grpc_translate_failed source=%s target=%s error=empty_translation_output", source, target)
+		log.Printf("grpc_translate_failed source=%s target=%s elapsed_ms=%d error=empty_translation_output", source, target, time.Since(start).Milliseconds())
 		return nil, status.Error(codes.Internal, "empty_translation_output")
 	}
+	log.Printf("grpc_translate_done source=%s target=%s elapsed_ms=%d out_len=%d", source, target, time.Since(start).Milliseconds(), len(translated))
 	return &pb.TranslationResponse{
 		OriginalText:     req.GetText(),
 		TranslatedText:   translated,

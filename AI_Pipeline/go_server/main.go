@@ -406,11 +406,14 @@ func (a *appState) translateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
+	log.Printf("http_translate_start source=%s target=%s text_len=%d", req.SourceLanguage, req.TargetLanguage, len(req.Text))
 	out, err := a.translateText(req.Text, req.SourceLanguage, req.TargetLanguage)
 	if err != nil {
+		log.Printf("http_translate_error source=%s target=%s elapsed_ms=%.2f error=%v", req.SourceLanguage, req.TargetLanguage, roundMs(start), err)
 		writeError(w, http.StatusInternalServerError, "Translation failed: "+err.Error())
 		return
 	}
+	log.Printf("http_translate_done source=%s target=%s elapsed_ms=%.2f out_len=%d", req.SourceLanguage, req.TargetLanguage, roundMs(start), len(out))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"original_text":      req.Text,
 		"translated_text":    out,

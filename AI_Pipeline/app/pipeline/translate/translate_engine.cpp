@@ -263,7 +263,7 @@ void emit_json_line(
     out.push_back('}');
 
     std::lock_guard<std::mutex> lock(g_stdout_mutex);
-    std::cout << out << '\n';
+    std::cout << out << '\n' << std::flush;
 }
 
 std::string resolve_binary(const std::string& base, const std::vector<std::string>& rel_candidates, const std::string& explicit_path) {
@@ -1304,5 +1304,6 @@ int translate_engine::run_translate_engine(int argc, char* argv[]) {
 
 int main(int argc, char* argv[]) {
     std::ios::sync_with_stdio(false);
+    std::cout.setf(std::ios::unitbuf);
     return translate_engine::run_translate_engine(argc, argv);
 }
