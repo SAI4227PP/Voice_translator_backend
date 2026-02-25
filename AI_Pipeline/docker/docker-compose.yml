@@ -12,7 +12,7 @@ services:
       - voice-models:/app/models
     environment:
       - PYTHONUNBUFFERED=1
-    container_name: voice-translator-downloader
+    container_name: AI_Pipeline-downloader
     restart: "no"
     profiles: ["setup"]
     command: python scripts/download_models.py
@@ -30,7 +30,7 @@ services:
         - SARVAM_HF_MODEL_ID=${SARVAM_HF_MODEL_ID:-sarvamai/sarvam-1}
         - SVARA_TTS_HF_MODEL_ID=${SVARA_TTS_HF_MODEL_ID:-kenpath/svara-tts-v1}
         - SVARA_TTS_GGUF_FILE=${SVARA_TTS_GGUF_FILE:-svara-tts-v1.Q5_K_M.gguf}
-    container_name: voice-translator-app
+    container_name: AI_Pipeline
     ports:
       - "7860:7860"
       - "50051:50051"
