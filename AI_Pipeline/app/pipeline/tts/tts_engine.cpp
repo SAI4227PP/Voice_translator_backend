@@ -238,7 +238,7 @@ std::string truncate_text(const std::string& text, int max_chars) {
     return text.substr(0, static_cast<std::size_t>(max_chars));
 }
 
-std::string summarize_stderr(const std::string& s, std::size_t each = 220) {
+std::string summarize_stderr(const std::string& s, std::size_t each = 1400) {
     const std::string t = trim(s);
     if (t.empty()) {
         return "";
@@ -812,10 +812,11 @@ private:
             std::string err_text((std::istreambuf_iterator<char>(err_in)), std::istreambuf_iterator<char>());
             unlink(err_path.c_str());
             const std::string brief = summarize_stderr(err_text);
+            const std::string model_meta = " model=" + cfg_.model_id + " vocoder=" + (cfg_.vocoder_model.empty() ? "-" : cfg_.vocoder_model);
             if (!brief.empty()) {
-                return {"", "llama_tts_timeout stderr=" + brief};
+                return {"", "llama_tts_timeout" + model_meta + " stderr=" + brief};
             }
-            return {"", "llama_tts_timeout"};
+            return {"", "llama_tts_timeout" + model_meta};
         }
 
         std::ifstream err_in(err_path, std::ios::in | std::ios::binary);
@@ -824,10 +825,11 @@ private:
         if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
             unlink(wav_path.c_str());
             const std::string brief = summarize_stderr(err_text);
+            const std::string model_meta = " model=" + cfg_.model_id + " vocoder=" + (cfg_.vocoder_model.empty() ? "-" : cfg_.vocoder_model);
             if (!brief.empty()) {
-                return {"", "llama_tts_failed stderr=" + brief};
+                return {"", "llama_tts_failed" + model_meta + " stderr=" + brief};
             }
-            return {"", "llama_tts_failed"};
+            return {"", "llama_tts_failed" + model_meta};
         }
 
         std::ifstream wav_in(wav_path, std::ios::in | std::ios::binary);
