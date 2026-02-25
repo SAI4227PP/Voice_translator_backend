@@ -24,6 +24,7 @@ type SvaraTTS struct {
 	cmd     *exec.Cmd
 	stdin   *bufio.Writer
 	stdout  *bufio.Reader
+	stderr  strings.Builder
 	pending map[string]chan map[string]any
 }
 
@@ -46,8 +47,11 @@ func (t *SvaraTTS) HealthCheck() error {
 }
 
 func (t *SvaraTTS) Synthesize(language, text string) ([]byte, error) {
+	textLen := len(text)
+	log.Printf("tts_synthesize_start language=%s text_len=%d", language, textLen)
 	resp, err := t.sendRequest("synthesize", language, text)
 	if err != nil {
+		log.Printf("tts_synthesize_failed language=%s text_len=%d error=%v", language, textLen, err)
 		return nil, err
 	}
 	if resp["status"] != "ok" {
@@ -55,13 +59,21 @@ func (t *SvaraTTS) Synthesize(language, text string) ([]byte, error) {
 		if snippet, _ := resp["stderr_snippet"].(string); strings.TrimSpace(snippet) != "" {
 			msg = fmt.Sprintf("%s (stderr_snippet=%s)", msg, strings.TrimSpace(snippet))
 		}
+		log.Printf("tts_synthesize_failed language=%s text_len=%d status_error=%s", language, textLen, msg)
 		return nil, fmt.Errorf("tts_failed: %s", msg)
 	}
 	audioB64, _ := resp["audio_b64"].(string)
 	if audioB64 == "" {
+		log.Printf("tts_synthesize_done language=%s text_len=%d audio_bytes=0", language, textLen)
 		return []byte{}, nil
 	}
-	return base64.StdEncoding.DecodeString(audioB64)
+	audio, decErr := base64.StdEncoding.DecodeString(audioB64)
+	if decErr != nil {
+		log.Printf("tts_synthesize_failed language=%s text_len=%d decode_error=%v", language, textLen, decErr)
+		return nil, decErr
+	}
+	log.Printf("tts_synthesize_done language=%s text_len=%d audio_bytes=%d", language, textLen, len(audio))
+	return audio, nil
 }
 
 func (t *SvaraTTS) ensureStarted() error {
@@ -130,7 +142,7 @@ func (t *SvaraTTS) ensureStarted() error {
 	t.stdout = bufio.NewReader(stdout)
 	t.started = true
 	go t.readLoop()
-	go io.Copy(io.Discard, stderr)
+	go t.stderrLoop(stderr)
 	t.mu.Unlock()
 
 	// One-time daemon warm-up to avoid first user request latency spikes.
@@ -185,6 +197,38 @@ func (t *SvaraTTS) failPending(err error) {
 	t.pending = map[string]chan map[string]any{}
 }
 
+func (t *SvaraTTS) stderrTailLocked() string {
+	s := strings.TrimSpace(t.stderr.String())
+	if len(s) > 500 {
+		return s[len(s)-500:]
+	}
+	return s
+}
+
+func (t *SvaraTTS) stderrLoop(r io.Reader) {
+	buf := make([]byte, 1024)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			chunk := strings.TrimSpace(string(buf[:n]))
+			if chunk != "" {
+				log.Printf("tts_daemon_stderr chunk=%s", chunk)
+			}
+			t.mu.Lock()
+			t.stderr.Write(buf[:n])
+			if t.stderr.Len() > 4000 {
+				txt := t.stderr.String()
+				t.stderr.Reset()
+				t.stderr.WriteString(txt[len(txt)-4000:])
+			}
+			t.mu.Unlock()
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
 func (t *SvaraTTS) sendRequest(cmd, language, text string) (map[string]any, error) {
 	if err := t.ensureStarted(); err != nil {
 		return nil, err
@@ -210,6 +254,12 @@ func (t *SvaraTTS) sendRequest(cmd, language, text string) (map[string]any, erro
 	}
 	t.mu.Unlock()
 	if err != nil {
+		t.mu.Lock()
+		tail := t.stderrTailLocked()
+		t.mu.Unlock()
+		if tail != "" {
+			return nil, fmt.Errorf("%w (stderr_tail=%s)", err, tail)
+		}
 		return nil, err
 	}
 
@@ -227,7 +277,11 @@ func (t *SvaraTTS) sendRequest(cmd, language, text string) (map[string]any, erro
 	case <-time.After(timeout):
 		t.mu.Lock()
 		delete(t.pending, id)
+		tail := t.stderrTailLocked()
 		t.mu.Unlock()
+		if tail != "" {
+			return nil, fmt.Errorf("tts timeout (stderr_tail=%s)", tail)
+		}
 		return nil, errors.New("tts timeout")
 	}
 }

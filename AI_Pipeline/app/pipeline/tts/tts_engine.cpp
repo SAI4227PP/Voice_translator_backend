@@ -458,10 +458,18 @@ std::pair<std::string, std::string> http_post_binary_audio(
 
     if (rc != CURLE_OK) {
         const std::string msg = errbuf[0] ? errbuf : curl_easy_strerror(rc);
-        return {"", "curl_error: " + msg};
+        return {"", "curl_error: " + msg + " url=" + url};
     }
     if (http_code < 200 || http_code >= 300) {
-        return {"", "http_status_" + std::to_string(http_code)};
+        std::string tail = trim(out);
+        if (tail.size() > 240) {
+            tail = tail.substr(tail.size() - 240);
+        }
+        std::string err = "http_status_" + std::to_string(http_code) + " url=" + url;
+        if (!tail.empty()) {
+            err += " body_tail=" + tail;
+        }
+        return {"", err};
     }
     return {out, ""};
 }
@@ -581,7 +589,8 @@ private:
             err = "llama_server_http_not_ready";
             return false;
         }
-        local_llama_base_ = "http://127.0.0.1:" + std::to_string(cfg_.llama_server_port) + "/v1";
+        local_llama_raw_base_ = "http://127.0.0.1:" + std::to_string(cfg_.llama_server_port);
+        local_llama_base_ = local_llama_raw_base_ + "/v1";
         return true;
 #else
         err = "local_gguf_mode_is_supported_only_on_linux";
@@ -752,8 +761,12 @@ private:
         payload += "\"response_format\":\"wav\"";
         payload += "}";
 
-        const std::string url = local_llama_base_ + "/audio/speech";
-        return http_post_binary_audio(url, payload, cfg_.timeout_seconds);
+        // Some llama-server builds expose /audio/speech, others /v1/audio/speech.
+        auto result = http_post_binary_audio(local_llama_base_ + "/audio/speech", payload, cfg_.timeout_seconds);
+        if (result.second.find("http_status_404") != std::string::npos) {
+            return http_post_binary_audio(local_llama_raw_base_ + "/audio/speech", payload, cfg_.timeout_seconds);
+        }
+        return result;
     }
 
     std::pair<std::string, std::string> synthesize(
@@ -828,6 +841,7 @@ private:
     std::condition_variable cv_;
     std::vector<std::thread> workers_;
     std::string local_llama_base_;
+    std::string local_llama_raw_base_;
 #ifdef __linux__
     pid_t llama_server_pid_ = -1;
 #endif
