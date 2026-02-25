@@ -118,14 +118,15 @@ RUN --mount=type=cache,id=vtb-ccache,target=/root/.cache/ccache \
       -DGGML_BLAS_VENDOR=OpenBLAS && \
     cmake --build /work/llama.cpp/build -j"$(nproc)" && \
     find /work/llama.cpp/build -type f -executable -exec strip --strip-unneeded {} + 2>/dev/null || true && \
-    mkdir -p /work/llama-runtime/bin && \
+    mkdir -p /work/llama-runtime/bin /work/llama-runtime/lib && \
     if [ -d /work/llama.cpp/build/bin ]; then \
       cp -a /work/llama.cpp/build/bin/. /work/llama-runtime/bin/; \
     elif [ -d /work/llama.cpp/bin ]; then \
       cp -a /work/llama.cpp/bin/. /work/llama-runtime/bin/; \
     else \
       echo "ERROR: llama.cpp binaries not found in bin/ or build/bin/" && exit 1; \
-    fi
+    fi && \
+    find /work/llama.cpp/build -type f -name "*.so*" -exec cp -a {} /work/llama-runtime/lib/ \;
 
 # -------------------------------
 # Sarvam model download + GGUF conversion
@@ -369,8 +370,9 @@ WORKDIR /app
 COPY --from=python-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 
 # Copy only llama runtime binaries/scripts required at runtime
-RUN mkdir -p /app/llama.cpp/bin
+RUN mkdir -p /app/llama.cpp/bin /app/llama.cpp/lib
 COPY --from=llama-build /work/llama-runtime/bin/ /app/llama.cpp/bin/
+COPY --from=llama-build /work/llama-runtime/lib/ /app/llama.cpp/lib/
 
 # Copy prebuilt model artifacts only
 COPY --from=model-build /work/llm-models/ /app/llm-models/
@@ -428,6 +430,7 @@ ENV HOST=0.0.0.0 \
     GRPC_PORT=50051 \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
     XDG_CACHE_HOME=/tmp \
+    LD_LIBRARY_PATH=/app/llama.cpp/lib:/app/llama.cpp/bin:${LD_LIBRARY_PATH} \
     HOME=/app
 
 USER appuser
