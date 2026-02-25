@@ -39,7 +39,9 @@ func NewSarvamTranslator(settings Settings) *SarvamTranslator {
 }
 
 func (t *SarvamTranslator) WarmUp() {
-	_, _ = t.sendRequest("warm_up", "", "", "", nil)
+	if _, err := t.sendRequest("warm_up", "", "", "", nil); err != nil {
+		log.Printf("translation_warmup_failed error=%v", err)
+	}
 }
 
 func (t *SarvamTranslator) HealthCheck() error {
@@ -65,7 +67,9 @@ func (t *SarvamTranslator) WarmUpCommonPairs(pairs [][2]string) {
 			continue
 		}
 		seen[key] = struct{}{}
-		_, _ = t.Translate("warmup", src, tgt)
+		if _, err := t.Translate("warmup", src, tgt); err != nil {
+			log.Printf("translation_warmup_pair_failed pair=%s error=%v", key, err)
+		}
 	}
 }
 
@@ -81,6 +85,9 @@ func (t *SarvamTranslator) Translate(text, source, target string) (string, error
 		}
 		raw, _ := resp["translated_text"].(string)
 		out = sanitizeTranslatedText(raw)
+		if strings.TrimSpace(text) != "" && !strings.EqualFold(strings.TrimSpace(source), strings.TrimSpace(target)) && out == "" {
+			return errors.New("empty translated_text after sanitize")
+		}
 		return nil
 	})
 	return out, err
@@ -99,7 +106,11 @@ func (t *SarvamTranslator) BatchTranslate(texts []string, source, target string)
 		if raw, ok := resp["translated_items"].([]any); ok {
 			out = make([]string, 0, len(raw))
 			for _, v := range raw {
-				out = append(out, sanitizeTranslatedText(fmt.Sprintf("%v", v)))
+				item := sanitizeTranslatedText(fmt.Sprintf("%v", v))
+				if item == "" {
+					return errors.New("empty translated_item after sanitize")
+				}
+				out = append(out, item)
 			}
 			return nil
 		}

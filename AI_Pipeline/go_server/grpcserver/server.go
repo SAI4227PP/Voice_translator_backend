@@ -189,6 +189,10 @@ func (s *Service) Translate(_ context.Context, req *pb.TranslationRequest) (*pb.
 		log.Printf("grpc_translate_failed source=%s target=%s error=%v", source, target, err)
 		return nil, mapWorkerError(err)
 	}
+	if strings.TrimSpace(translated) == "" && !strings.EqualFold(source, target) {
+		log.Printf("grpc_translate_failed source=%s target=%s error=empty_translation_output", source, target)
+		return nil, status.Error(codes.Internal, "empty_translation_output")
+	}
 	return &pb.TranslationResponse{
 		OriginalText:     req.GetText(),
 		TranslatedText:   translated,
