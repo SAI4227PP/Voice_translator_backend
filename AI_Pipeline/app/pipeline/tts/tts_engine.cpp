@@ -591,6 +591,8 @@ private:
         }
         local_llama_raw_base_ = "http://127.0.0.1:" + std::to_string(cfg_.llama_server_port);
         local_llama_base_ = local_llama_raw_base_ + "/v1";
+        // Fixed local endpoint path; no fallback probing.
+        local_tts_endpoint_ = local_llama_base_ + "/audio/speech";
         return true;
 #else
         err = "local_gguf_mode_is_supported_only_on_linux";
@@ -749,6 +751,9 @@ private:
         if (local_llama_base_.empty()) {
             return {"", "local_gguf_runtime_not_initialized"};
         }
+        if (local_tts_endpoint_.empty()) {
+            return {"", "local_tts_endpoint_not_initialized"};
+        }
 
         thread_local std::string payload;
         payload.clear();
@@ -760,13 +765,7 @@ private:
         payload += "\"language\":\"" + json_escape(language) + "\",";
         payload += "\"response_format\":\"wav\"";
         payload += "}";
-
-        // Some llama-server builds expose /audio/speech, others /v1/audio/speech.
-        auto result = http_post_binary_audio(local_llama_base_ + "/audio/speech", payload, cfg_.timeout_seconds);
-        if (result.second.find("http_status_404") != std::string::npos) {
-            return http_post_binary_audio(local_llama_raw_base_ + "/audio/speech", payload, cfg_.timeout_seconds);
-        }
-        return result;
+        return http_post_binary_audio(local_tts_endpoint_, payload, cfg_.timeout_seconds);
     }
 
     std::pair<std::string, std::string> synthesize(
@@ -842,6 +841,7 @@ private:
     std::vector<std::thread> workers_;
     std::string local_llama_base_;
     std::string local_llama_raw_base_;
+    std::string local_tts_endpoint_;
 #ifdef __linux__
     pid_t llama_server_pid_ = -1;
 #endif
