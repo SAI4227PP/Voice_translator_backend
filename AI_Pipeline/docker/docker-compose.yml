@@ -81,7 +81,7 @@ services:
       - SVARA_TTS_THREADS=2
       - SVARA_TTS_CONTEXT_SIZE=1024
       - SVARA_TTS_PIN_WORKERS=false
-      - SVARA_TTS_VOCODER_MODEL=/app/llm-models/svara-tts-v1-backbone-f16.gguf
+      - SVARA_TTS_VOCODER_MODEL=${SVARA_TTS_VOCODER_MODEL:-}
       - SVARA_TTS_ENDPOINT_PATH=/v1/audio/speech
       - TTS_ENABLE_WARM_START=True
       - TTS_PRELOAD_LANGUAGES=en,hi,bn,ta

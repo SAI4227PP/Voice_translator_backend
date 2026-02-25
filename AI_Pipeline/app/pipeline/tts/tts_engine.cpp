@@ -238,6 +238,17 @@ std::string truncate_text(const std::string& text, int max_chars) {
     return text.substr(0, static_cast<std::size_t>(max_chars));
 }
 
+std::string summarize_stderr(const std::string& s, std::size_t each = 220) {
+    const std::string t = trim(s);
+    if (t.empty()) {
+        return "";
+    }
+    if (t.size() <= each * 2 + 16) {
+        return t;
+    }
+    return t.substr(0, each) + " ... " + t.substr(t.size() - each);
+}
+
 std::string resolve_binary(
     const std::string& base,
     const std::vector<std::string>& rel_candidates,
@@ -796,12 +807,9 @@ private:
             std::ifstream err_in(err_path, std::ios::in | std::ios::binary);
             std::string err_text((std::istreambuf_iterator<char>(err_in)), std::istreambuf_iterator<char>());
             unlink(err_path.c_str());
-            std::string tail = trim(err_text);
-            if (tail.size() > 200) {
-                tail = tail.substr(tail.size() - 200);
-            }
-            if (!tail.empty()) {
-                return {"", "llama_tts_timeout stderr_tail=" + tail};
+            const std::string brief = summarize_stderr(err_text);
+            if (!brief.empty()) {
+                return {"", "llama_tts_timeout stderr=" + brief};
             }
             return {"", "llama_tts_timeout"};
         }
@@ -811,12 +819,9 @@ private:
         unlink(err_path.c_str());
         if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
             unlink(wav_path.c_str());
-            std::string tail = trim(err_text);
-            if (tail.size() > 200) {
-                tail = tail.substr(tail.size() - 200);
-            }
-            if (!tail.empty()) {
-                return {"", "llama_tts_failed stderr_tail=" + tail};
+            const std::string brief = summarize_stderr(err_text);
+            if (!brief.empty()) {
+                return {"", "llama_tts_failed stderr=" + brief};
             }
             return {"", "llama_tts_failed"};
         }
