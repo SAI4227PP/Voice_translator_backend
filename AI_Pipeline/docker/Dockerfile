@@ -372,8 +372,7 @@ COPY --from=model-build /work/llm-models/ /app/llm-models/
 
 # Copy python runtime app package; then remove Go-only subtrees/artifacts
 COPY app/ /app/app/
-RUN rm -rf /app/app/rooms /app/app/messaging /app/app/workers /app/app/utils && \
-    find /app/app -type f -name "*.go" -delete && \
+RUN find /app/app -type f -name "*.go" -delete && \
     find /app/app -type f -name "go.mod" -delete
 
 # Copy compiled daemons and server binaries only
