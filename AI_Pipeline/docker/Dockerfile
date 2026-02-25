@@ -394,13 +394,12 @@ COPY --from=cpp-build /app/app/pipeline/translate/translate_engine /app/bin/tran
 COPY --from=cpp-build /app/app/pipeline/tts/tts_engine /app/bin/tts_engine
 COPY --from=go-build /out/voice-translator-go-server /app/bin/voice-translator-go-server
 
-RUN mkdir -p logs data models /tmp /app/.local && \
-    groupadd -r appuser && \
-    useradd -r -g appuser -u 1000 appuser && \
-    chmod -R 755 /usr/local/lib/python3.11/site-packages && \
+RUN mkdir -p /app/logs /app/data /app/models /tmp /app/.local && \
+    groupadd appuser && \
+    useradd -g appuser -u 1000 appuser && \
     find /app -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
     find /app -type f -name "*.pyc" -delete && \
-    chown -R appuser:appuser /app /tmp
+    chown -R appuser:appuser /app/logs /app/data /app/models /app/.local /tmp
 
 ENV HOST=0.0.0.0 \
     PORT=7860 \
