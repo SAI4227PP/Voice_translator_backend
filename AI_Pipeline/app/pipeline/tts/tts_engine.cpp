@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -261,6 +262,14 @@ std::string resolve_llama_server_path(const std::string& llama_cpp_path, const s
     return resolve_binary(
         llama_cpp_path,
         {"bin/llama-server", "build/bin/llama-server", "llama-server", "server"},
+        explicit_path
+    );
+}
+
+std::string resolve_llama_tts_path(const std::string& llama_cpp_path, const std::string& explicit_path) {
+    return resolve_binary(
+        llama_cpp_path,
+        {"bin/llama-tts", "build/bin/llama-tts", "llama-tts"},
         explicit_path
     );
 }
@@ -543,68 +552,21 @@ private:
 
     bool init_local_gguf(std::string& err) {
 #ifdef __linux__
-        const std::string llama_server =
-            resolve_llama_server_path(cfg_.llama_cpp_path, cfg_.explicit_llama_server_path);
-        if (llama_server.empty()) {
-            err = "llama_server_not_found_in_llama_cpp_path";
+        const std::string llama_tts =
+            resolve_llama_tts_path(cfg_.llama_cpp_path, cfg_.explicit_llama_server_path);
+        if (llama_tts.empty()) {
+            err = "llama_tts_not_found_in_llama_cpp_path";
             return false;
         }
         if (!fs::exists(cfg_.model_id)) {
             err = "local_model_not_found";
             return false;
         }
-
-        pid_t pid = fork();
-        if (pid < 0) {
-            err = "fork_failed";
+        if (!trim(cfg_.vocoder_model).empty() && cfg_.vocoder_model != "-" && !fs::exists(cfg_.vocoder_model)) {
+            err = "vocoder_model_not_found";
             return false;
         }
-        if (pid == 0) {
-            const std::string port_s = std::to_string(cfg_.llama_server_port);
-            const std::string threads_s = std::to_string(std::max(1, cfg_.gguf_threads));
-            const std::string context_s = std::to_string(std::max(256, cfg_.gguf_context_size));
-            std::vector<char*> args;
-            args.push_back(const_cast<char*>(llama_server.c_str()));
-            args.push_back(const_cast<char*>("-m"));
-            args.push_back(const_cast<char*>(cfg_.model_id.c_str()));
-            args.push_back(const_cast<char*>("-t"));
-            args.push_back(const_cast<char*>(threads_s.c_str()));
-            args.push_back(const_cast<char*>("-c"));
-            args.push_back(const_cast<char*>(context_s.c_str()));
-            args.push_back(const_cast<char*>("--host"));
-            args.push_back(const_cast<char*>("127.0.0.1"));
-            args.push_back(const_cast<char*>("--port"));
-            args.push_back(const_cast<char*>(port_s.c_str()));
-            if (!trim(cfg_.vocoder_model).empty() && cfg_.vocoder_model != "-") {
-                args.push_back(const_cast<char*>("--model-vocoder"));
-                args.push_back(const_cast<char*>(cfg_.vocoder_model.c_str()));
-            }
-            args.push_back(nullptr);
-            execv(llama_server.c_str(), args.data());
-            _exit(127);
-        }
-
-        llama_server_pid_ = pid;
-        if (!wait_for_port_ready(cfg_.llama_server_port, 30000, llama_server_pid_)) {
-            stop_local_gguf();
-            err = "llama_server_start_failed_or_timed_out";
-            return false;
-        }
-        if (!wait_for_http_ready(cfg_.llama_server_port, 30000)) {
-            stop_local_gguf();
-            err = "llama_server_http_not_ready";
-            return false;
-        }
-        local_llama_raw_base_ = "http://127.0.0.1:" + std::to_string(cfg_.llama_server_port);
-        local_llama_base_ = local_llama_raw_base_ + "/v1";
-        local_tts_endpoint_ = cfg_.tts_endpoint_path;
-        if (trim(local_tts_endpoint_).empty() || local_tts_endpoint_ == "-") {
-            local_tts_endpoint_ = "/v1/audio/speech";
-        }
-        if (!local_tts_endpoint_.empty() && local_tts_endpoint_[0] != '/') {
-            local_tts_endpoint_.insert(local_tts_endpoint_.begin(), '/');
-        }
-        local_tts_endpoint_ = local_llama_raw_base_ + local_tts_endpoint_;
+        llama_tts_path_ = llama_tts;
         return true;
 #else
         err = "local_gguf_mode_is_supported_only_on_linux";
@@ -614,12 +576,7 @@ private:
 
     void stop_local_gguf() {
 #ifdef __linux__
-        if (llama_server_pid_ > 0) {
-            kill(llama_server_pid_, SIGTERM);
-            int status = 0;
-            waitpid(llama_server_pid_, &status, 0);
-            llama_server_pid_ = -1;
-        }
+        // no-op: local TTS runs one-shot via llama-tts CLI
 #endif
     }
 
@@ -756,28 +713,124 @@ private:
     }
 
     std::pair<std::string, std::string> synthesize_local_gguf(const std::string& text, const std::string& language) {
+        (void)language;
+#ifdef __linux__
         const std::string clean_text = truncate_text(trim(text), cfg_.max_input_chars);
         if (clean_text.empty()) {
             return {"", "empty_text"};
         }
-        if (local_llama_base_.empty()) {
+        if (llama_tts_path_.empty()) {
             return {"", "local_gguf_runtime_not_initialized"};
         }
-        if (local_tts_endpoint_.empty()) {
-            return {"", "local_tts_endpoint_not_initialized"};
+
+        char wav_template[] = "/tmp/llama_tts_wav_XXXXXX";
+        int wav_fd = mkstemp(wav_template);
+        if (wav_fd < 0) {
+            return {"", "mkstemp_failed_for_wav"};
+        }
+        close(wav_fd);
+        const std::string wav_path = wav_template;
+
+        char err_template[] = "/tmp/llama_tts_err_XXXXXX";
+        int err_fd = mkstemp(err_template);
+        if (err_fd < 0) {
+            unlink(wav_path.c_str());
+            return {"", "mkstemp_failed_for_stderr"};
+        }
+        const std::string err_path = err_template;
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            close(err_fd);
+            unlink(wav_path.c_str());
+            unlink(err_path.c_str());
+            return {"", "fork_failed"};
         }
 
-        thread_local std::string payload;
-        payload.clear();
-        payload.reserve(256 + clean_text.size());
-        payload += "{";
-        payload += "\"model\":\"" + json_escape(cfg_.model_id) + "\",";
-        payload += "\"input\":\"" + json_escape(clean_text) + "\",";
-        payload += "\"voice\":\"" + json_escape(cfg_.default_voice) + "\",";
-        payload += "\"language\":\"" + json_escape(language) + "\",";
-        payload += "\"response_format\":\"wav\"";
-        payload += "}";
-        return http_post_binary_audio(local_tts_endpoint_, payload, cfg_.timeout_seconds);
+        if (pid == 0) {
+            dup2(err_fd, STDERR_FILENO);
+            close(err_fd);
+            const std::string threads_s = std::to_string(std::max(1, cfg_.gguf_threads));
+            const std::string context_s = std::to_string(std::max(256, cfg_.gguf_context_size));
+            std::vector<char*> args;
+            args.push_back(const_cast<char*>(llama_tts_path_.c_str()));
+            args.push_back(const_cast<char*>("-m"));
+            args.push_back(const_cast<char*>(cfg_.model_id.c_str()));
+            args.push_back(const_cast<char*>("-t"));
+            args.push_back(const_cast<char*>(threads_s.c_str()));
+            args.push_back(const_cast<char*>("-c"));
+            args.push_back(const_cast<char*>(context_s.c_str()));
+            if (!trim(cfg_.vocoder_model).empty() && cfg_.vocoder_model != "-") {
+                args.push_back(const_cast<char*>("-mv"));
+                args.push_back(const_cast<char*>(cfg_.vocoder_model.c_str()));
+            }
+            args.push_back(const_cast<char*>("--tts-use-guide-tokens"));
+            args.push_back(const_cast<char*>("-p"));
+            args.push_back(const_cast<char*>(clean_text.c_str()));
+            args.push_back(const_cast<char*>("-o"));
+            args.push_back(const_cast<char*>(wav_path.c_str()));
+            args.push_back(nullptr);
+            execv(llama_tts_path_.c_str(), args.data());
+            _exit(127);
+        }
+
+        close(err_fd);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(std::max(1, cfg_.timeout_seconds));
+        int status = 0;
+        bool exited = false;
+        while (std::chrono::steady_clock::now() < deadline) {
+            pid_t r = waitpid(pid, &status, WNOHANG);
+            if (r == pid) {
+                exited = true;
+                break;
+            }
+            if (r < 0) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        if (!exited) {
+            kill(pid, SIGKILL);
+            waitpid(pid, &status, 0);
+            unlink(wav_path.c_str());
+            std::ifstream err_in(err_path, std::ios::in | std::ios::binary);
+            std::string err_text((std::istreambuf_iterator<char>(err_in)), std::istreambuf_iterator<char>());
+            unlink(err_path.c_str());
+            std::string tail = trim(err_text);
+            if (tail.size() > 200) {
+                tail = tail.substr(tail.size() - 200);
+            }
+            if (!tail.empty()) {
+                return {"", "llama_tts_timeout stderr_tail=" + tail};
+            }
+            return {"", "llama_tts_timeout"};
+        }
+
+        std::ifstream err_in(err_path, std::ios::in | std::ios::binary);
+        std::string err_text((std::istreambuf_iterator<char>(err_in)), std::istreambuf_iterator<char>());
+        unlink(err_path.c_str());
+        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            unlink(wav_path.c_str());
+            std::string tail = trim(err_text);
+            if (tail.size() > 200) {
+                tail = tail.substr(tail.size() - 200);
+            }
+            if (!tail.empty()) {
+                return {"", "llama_tts_failed stderr_tail=" + tail};
+            }
+            return {"", "llama_tts_failed"};
+        }
+
+        std::ifstream wav_in(wav_path, std::ios::in | std::ios::binary);
+        std::string wav_bytes((std::istreambuf_iterator<char>(wav_in)), std::istreambuf_iterator<char>());
+        unlink(wav_path.c_str());
+        if (wav_bytes.size() < 12 || wav_bytes.compare(0, 4, "RIFF") != 0 || wav_bytes.compare(8, 4, "WAVE") != 0) {
+            return {"", "llama_tts_output_not_wav"};
+        }
+        return {wav_bytes, ""};
+#else
+        return {"", "local_gguf_mode_is_supported_only_on_linux"};
+#endif
     }
 
     std::pair<std::string, std::string> synthesize(
@@ -851,9 +904,7 @@ private:
     std::mutex cv_mu_;
     std::condition_variable cv_;
     std::vector<std::thread> workers_;
-    std::string local_llama_base_;
-    std::string local_llama_raw_base_;
-    std::string local_tts_endpoint_;
+    std::string llama_tts_path_;
 #ifdef __linux__
     pid_t llama_server_pid_ = -1;
 #endif
@@ -924,9 +975,9 @@ int tts_engine::run_tts_engine(int argc, char* argv[]) {
                 std::cerr << "invalid_local_model_extension_expected_gguf\n";
                 return 2;
             }
-            const std::string server = resolve_llama_server_path(llama_cpp_path, explicit_llama_server_path);
-            if (server.empty()) {
-                std::cerr << "llama_server_not_found_for_local_gguf_mode\n";
+            const std::string tts = resolve_llama_tts_path(llama_cpp_path, explicit_llama_server_path);
+            if (tts.empty()) {
+                std::cerr << "llama_tts_not_found_for_local_gguf_mode\n";
                 return 2;
             }
         } else {
