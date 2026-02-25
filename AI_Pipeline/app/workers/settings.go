@@ -30,4 +30,6 @@ type Settings struct {
 	SvaraThreads         int
 	SvaraContextSize     int
 	SvaraPinWorkers      bool
+	SvaraEndpointPath    string
+	SvaraVocoderModel    string
 }

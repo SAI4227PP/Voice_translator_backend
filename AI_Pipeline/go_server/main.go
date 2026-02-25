@@ -1086,5 +1086,7 @@ func toWorkerSettings(s config.Settings) workers.Settings {
 		SvaraThreads:         s.SvaraThreads,
 		SvaraContextSize:     s.SvaraContextSize,
 		SvaraPinWorkers:      s.SvaraPinWorkers,
+		SvaraEndpointPath:    s.SvaraEndpointPath,
+		SvaraVocoderModel:    s.SvaraVocoderModel,
 	}
 }

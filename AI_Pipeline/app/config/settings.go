@@ -79,6 +79,8 @@ type Settings struct {
 	SvaraThreads          int
 	SvaraContextSize      int
 	SvaraPinWorkers       bool
+	SvaraEndpointPath     string
+	SvaraVocoderModel     string
 	TTSEnableWarmStart    bool
 	TTSPreloadLanguages   string
 	TTSPreloadLangsParsed []string
@@ -177,6 +179,8 @@ func LoadSettings() Settings {
 		SvaraThreads:         envInt("SVARA_TTS_THREADS", 2),
 		SvaraContextSize:     envInt("SVARA_TTS_CONTEXT_SIZE", 1024),
 		SvaraPinWorkers:      envBool("SVARA_TTS_PIN_WORKERS", false),
+		SvaraEndpointPath:    env("SVARA_TTS_ENDPOINT_PATH", "/v1/audio/speech"),
+		SvaraVocoderModel:    env("SVARA_TTS_VOCODER_MODEL", ""),
 		TTSEnableWarmStart:   envBool("TTS_ENABLE_WARM_START", true),
 		TTSPreloadLanguages:  env("TTS_PRELOAD_LANGUAGES", "en,hi,ta,bn"),
 		STTEnableWarmStart:   envBool("STT_ENABLE_WARM_START", true),

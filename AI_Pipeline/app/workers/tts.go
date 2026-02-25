@@ -116,6 +116,8 @@ func (t *SvaraTTS) ensureStarted() error {
 		fmt.Sprintf("%d", t.settings.SvaraThreads),
 		fmt.Sprintf("%d", t.settings.SvaraContextSize),
 		fmt.Sprintf("%t", t.settings.SvaraPinWorkers),
+		valueOrDash(t.settings.SvaraVocoderModel, "-"),
+		valueOrDash(t.settings.SvaraEndpointPath, "/v1/audio/speech"),
 	}
 	cmd := exec.Command(t.settings.SvaraCppBinaryPath, args...)
 	stdin, err := cmd.StdinPipe()

@@ -54,6 +54,8 @@ struct EngineConfig {
     int gguf_threads = 2;
     int gguf_context_size = 1024;
     bool pin_workers = false;
+    std::string vocoder_model;
+    std::string tts_endpoint_path = "/v1/audio/speech";
 };
 
 struct Request {
@@ -573,6 +575,10 @@ private:
             args.push_back(const_cast<char*>("127.0.0.1"));
             args.push_back(const_cast<char*>("--port"));
             args.push_back(const_cast<char*>(port_s.c_str()));
+            if (!trim(cfg_.vocoder_model).empty() && cfg_.vocoder_model != "-") {
+                args.push_back(const_cast<char*>("--model-vocoder"));
+                args.push_back(const_cast<char*>(cfg_.vocoder_model.c_str()));
+            }
             args.push_back(nullptr);
             execv(llama_server.c_str(), args.data());
             _exit(127);
@@ -591,8 +597,14 @@ private:
         }
         local_llama_raw_base_ = "http://127.0.0.1:" + std::to_string(cfg_.llama_server_port);
         local_llama_base_ = local_llama_raw_base_ + "/v1";
-        // Fixed local endpoint path; no fallback probing.
-        local_tts_endpoint_ = local_llama_base_ + "/audio/speech";
+        local_tts_endpoint_ = cfg_.tts_endpoint_path;
+        if (trim(local_tts_endpoint_).empty() || local_tts_endpoint_ == "-") {
+            local_tts_endpoint_ = "/v1/audio/speech";
+        }
+        if (!local_tts_endpoint_.empty() && local_tts_endpoint_[0] != '/') {
+            local_tts_endpoint_.insert(local_tts_endpoint_.begin(), '/');
+        }
+        local_tts_endpoint_ = local_llama_raw_base_ + local_tts_endpoint_;
         return true;
 #else
         err = "local_gguf_mode_is_supported_only_on_linux";
@@ -849,7 +861,7 @@ private:
 
 EngineConfig parse_daemon_config(int argc, char* argv[]) {
     EngineConfig cfg;
-    // daemon model voice timeout queue workers max_input llama_cpp_path llama_server_port explicit_llama_server_path gguf_threads gguf_context_size pin_workers
+    // daemon model voice timeout queue workers max_input llama_cpp_path llama_server_port explicit_llama_server_path gguf_threads gguf_context_size pin_workers vocoder_model tts_endpoint_path
     cfg.model_id = (argc > 2) ? argv[2] : "";
     cfg.default_voice = (argc > 3) ? argv[3] : "anushka";
     cfg.timeout_seconds = (argc > 4) ? std::atoi(argv[4]) : 90;
@@ -862,6 +874,8 @@ EngineConfig parse_daemon_config(int argc, char* argv[]) {
     cfg.gguf_threads = (argc > 11) ? std::max(1, std::atoi(argv[11])) : 2;
     cfg.gguf_context_size = (argc > 12) ? std::max(256, std::atoi(argv[12])) : 1024;
     cfg.pin_workers = (argc > 13) ? (to_lower(trim(argv[13])) == "true" || trim(argv[13]) == "1") : false;
+    cfg.vocoder_model = (argc > 14) ? argv[14] : "-";
+    cfg.tts_endpoint_path = (argc > 15) ? argv[15] : "/v1/audio/speech";
     cfg.use_local_model = fs::exists(cfg.model_id);
     return cfg;
 }
