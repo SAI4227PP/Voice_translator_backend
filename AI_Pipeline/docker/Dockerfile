@@ -148,11 +148,11 @@ RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
     fi
 
 RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
-    pip install --upgrade --force-reinstall \
+    pip install --upgrade \
       --index-url https://download.pytorch.org/whl/cpu \
       --extra-index-url https://pypi.org/simple \
       torch==2.6.0 && \
-    pip install --upgrade --force-reinstall \
+    pip install --upgrade \
       transformers==4.55.4 \
       numpy==1.24.3
 
