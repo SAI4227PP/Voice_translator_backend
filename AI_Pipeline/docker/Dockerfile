@@ -2,7 +2,7 @@
 # Note: COMPOSE_BAKE=true is a Docker Compose performance hint, not an error.
 
 # ======================================================
-# Voice-to-Voice Translator - Production Image
+# AI_Pipeline - Production Image
 # - Multi-stage build to keep final image slim
 # - Python deps installed at build time
 # - No runtime downloads
@@ -26,6 +26,7 @@ RUN --mount=type=cache,id=vtb-apt-cache,target=/var/cache/apt,sharing=locked \
     libstdc++6 \
     libgcc-s1 \
     libgomp1 \
+    libgfortran5 \
     libopenblas0-pthread \
     libportaudio2 \
     libsndfile1 \
@@ -34,7 +35,15 @@ RUN --mount=type=cache,id=vtb-apt-cache,target=/var/cache/apt,sharing=locked \
     curl \
     ca-certificates \
     espeak-ng \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* && \
+    set -eux; \
+    for d in /usr/lib/*-linux-gnu/openblas-*; do \
+      if [ -f "$d/libopenblas.so.0" ]; then \
+        ln -sf "$d/libopenblas.so.0" /usr/lib/x86_64-linux-gnu/libopenblas.so.0; \
+        ln -sf "$d/libopenblas.so.0" /usr/lib/libopenblas.so.0; \
+        break; \
+      fi; \
+    done
 
 # -------------------------------
 # Build base (toolchains)

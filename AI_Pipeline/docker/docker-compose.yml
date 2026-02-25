@@ -18,7 +18,7 @@ services:
     profiles: ["setup"]
     command: python scripts/download_models.py
 
-  voice-translator:
+  AI_Pipeline:
     image: ai_pipeline:latest
     build:
       context: ..
