@@ -66,7 +66,7 @@ services:
       - HOME=/app
       - STT_ENABLE_WARM_START=True
       - STT_PRELOAD_LANGUAGES=en,hi
-      - TRANSLATION_ENABLE_WARM_START=True
+      - TRANSLATION_ENABLE_WARM_START=False
       - TRANSLATION_WARM_START_MODE=common
       - TRANSLATION_COMMON_PAIRS=en-hi,hi-en,en-bn,bn-en
       - TTS_ENGINE=svara

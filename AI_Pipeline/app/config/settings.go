@@ -163,7 +163,7 @@ func LoadSettings() Settings {
 		TranslationRetryBackoffMs:   envInt("TRANSLATION_RETRY_BACKOFF_MS", 250),
 		TranslationBreakerThreshold: envInt("TRANSLATION_CIRCUIT_BREAKER_THRESHOLD", 5),
 		TranslationBreakerResetSecs: envInt("TRANSLATION_CIRCUIT_BREAKER_RESET_SECONDS", 30),
-		TranslationEnableWarmStart:  envBool("TRANSLATION_ENABLE_WARM_START", true),
+		TranslationEnableWarmStart:  envBool("TRANSLATION_ENABLE_WARM_START", false),
 		TranslationWarmStartMode:    env("TRANSLATION_WARM_START_MODE", "common"),
 		TranslationCommonPairs:      env("TRANSLATION_COMMON_PAIRS", "en-hi,hi-en,en-bn,bn-en"),
 
