@@ -1,13 +1,14 @@
 services:
   model-downloader:
+    image: ai_pipeline-downloader:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile
       target: model-downloader
+      args:
+        - BUILDKIT_INLINE_CACHE=1
       cache_from:
-        - type=local,src=.buildx-cache
-      cache_to:
-        - type=local,dest=.buildx-cache,mode=max
+        - ai_pipeline-downloader:latest
     volumes:
       - voice-models:/app/models
     environment:
@@ -18,14 +19,14 @@ services:
     command: python scripts/download_models.py
 
   voice-translator:
+    image: ai_pipeline:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile
       cache_from:
-        - type=local,src=.buildx-cache
-      cache_to:
-        - type=local,dest=.buildx-cache,mode=max
+        - ai_pipeline:latest
       args:
+        - BUILDKIT_INLINE_CACHE=1
         - HF_TOKEN=${HF_TOKEN:-}
         - SARVAM_HF_MODEL_ID=${SARVAM_HF_MODEL_ID:-sarvamai/sarvam-1}
         - SVARA_TTS_HF_MODEL_ID=${SVARA_TTS_HF_MODEL_ID:-kenpath/svara-tts-v1}
