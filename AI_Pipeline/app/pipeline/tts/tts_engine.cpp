@@ -24,9 +24,6 @@
 #include <vector>
 
 #include <curl/curl.h>
-#ifdef TTS_ENGINE_ENABLE_ONNX
-#include <onnxruntime_cxx_api.h>
-#endif
 #ifdef __linux__
 #include <pthread.h>
 #include <sched.h>
@@ -44,27 +41,20 @@ namespace fs = std::filesystem;
 namespace {
 
 struct EngineConfig {
-    std::string api_base_url;
     std::string model_id;
     std::string llama_cpp_path;
     std::string explicit_llama_server_path;
     std::string default_voice;
-    std::string api_key;
     int timeout_seconds = 90;
     int queue_size = 128;
     int worker_count = 2;
     int max_input_chars = 1200;
     int llama_server_port = 8091;
-    bool use_onnx = false;
     bool use_local_model = false;
-    int onnx_sample_rate = 24000;
-    int onnx_threads = 1;
     int gguf_threads = 2;
     int gguf_context_size = 1024;
     bool pin_workers = false;
 };
-constexpr std::size_t kMaxOnnxTokenLength = 4096;
-constexpr std::size_t kOnnxTokenWindow = 256;
 
 struct Request {
     std::string id;
@@ -392,7 +382,6 @@ size_t curl_write_callback(char* ptr, size_t size, size_t nmemb, void* userdata)
 std::pair<std::string, std::string> http_post_binary_audio(
     const std::string& url,
     const std::string& payload,
-    const std::string& api_key,
     long timeout_seconds
 ) {
     thread_local CURL* curl = curl_easy_init();
@@ -406,10 +395,6 @@ std::pair<std::string, std::string> http_post_binary_audio(
 
     struct curl_slist* headers = nullptr;
     headers = curl_slist_append(headers, "Content-Type: application/json");
-    if (!api_key.empty() && api_key != "-") {
-        const std::string auth = "Authorization: Bearer " + api_key;
-        headers = curl_slist_append(headers, auth.c_str());
-    }
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
@@ -455,21 +440,12 @@ public:
     int run() {
         curl_global_init(CURL_GLOBAL_DEFAULT);
 
-        if (cfg_.use_local_model && !cfg_.use_onnx) {
+        if (cfg_.use_local_model) {
             std::string init_err;
             if (!init_local_gguf(init_err)) {
                 std::cerr << "local_gguf_init_failed: " << init_err << "\n";
                 curl_global_cleanup();
                 return 8;
-            }
-        }
-
-        if (cfg_.use_onnx) {
-            std::string init_err;
-            if (!init_onnx(init_err)) {
-                std::cerr << "onnx_init_failed: " << init_err << "\n";
-                curl_global_cleanup();
-                return 7;
             }
         }
 
@@ -505,15 +481,6 @@ public:
     }
 
 private:
-#ifdef TTS_ENGINE_ENABLE_ONNX
-    struct OnnxRuntimeState {
-        Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "svara-tts"};
-        Ort::SessionOptions opts{};
-        std::unique_ptr<Ort::Session> session;
-        std::string output_name{"audio"};
-    };
-#endif
-
     void bind_worker_affinity(int worker_index) {
 #ifdef __linux__
         if (!cfg_.pin_workers) return;
@@ -573,7 +540,7 @@ private:
             err = "llama_server_start_failed_or_timed_out";
             return false;
         }
-        local_api_base_ = "http://127.0.0.1:" + std::to_string(cfg_.llama_server_port) + "/v1";
+        local_llama_base_ = "http://127.0.0.1:" + std::to_string(cfg_.llama_server_port) + "/v1";
         return true;
 #else
         err = "local_gguf_mode_is_supported_only_on_linux";
@@ -591,103 +558,6 @@ private:
         }
 #endif
     }
-
-    bool init_onnx(std::string& err) {
-#ifdef TTS_ENGINE_ENABLE_ONNX
-        try {
-            onnx_.reset(new OnnxRuntimeState());
-            onnx_->opts.SetIntraOpNumThreads(std::max(1, cfg_.onnx_threads));
-            onnx_->opts.SetInterOpNumThreads(1);
-            onnx_->opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-            onnx_->opts.EnableCpuMemArena();
-            onnx_->opts.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
-            onnx_->session.reset(new Ort::Session(onnx_->env, cfg_.model_id.c_str(), onnx_->opts));
-            Ort::AllocatorWithDefaultOptions allocator;
-            auto output_name = onnx_->session->GetOutputNameAllocated(0, allocator);
-            if (output_name && output_name.get()[0] != '\0') {
-                onnx_->output_name = output_name.get();
-            }
-            return true;
-        } catch (const std::exception& e) {
-            err = e.what();
-            return false;
-        }
-#else
-        err = "compiled_without_onnxruntime";
-        return false;
-#endif
-    }
-
-#ifdef TTS_ENGINE_ENABLE_ONNX
-    std::pair<std::string, std::string> synthesize_onnx(
-        const std::vector<std::int64_t>& input_ids,
-        const std::vector<std::int64_t>& attention_mask
-    ) {
-        if (!onnx_ || !onnx_->session) {
-            return {"", "onnx_session_not_initialized"};
-        }
-        if (input_ids.empty() || attention_mask.empty()) {
-            return {"", "missing_token_tensors"};
-        }
-        if (input_ids.size() != attention_mask.size()) {
-            return {"", "token_tensor_size_mismatch"};
-        }
-        const std::array<std::int64_t, 2> shape = {1, static_cast<std::int64_t>(input_ids.size())};
-        const char* input_names[] = {"input_ids", "attention_mask"};
-        const char* output_names[] = {onnx_->output_name.c_str()};
-
-        try {
-            thread_local Ort::MemoryInfo mem_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-            Ort::Value input_ids_tensor = Ort::Value::CreateTensor<std::int64_t>(
-                mem_info,
-                const_cast<std::int64_t*>(input_ids.data()),
-                input_ids.size(),
-                shape.data(),
-                shape.size()
-            );
-            Ort::Value mask_tensor = Ort::Value::CreateTensor<std::int64_t>(
-                mem_info,
-                attention_mask.data(),
-                attention_mask.size(),
-                shape.data(),
-                shape.size()
-            );
-
-            std::array<Ort::Value, 2> ort_inputs = {
-                std::move(input_ids_tensor),
-                std::move(mask_tensor),
-            };
-            Ort::IoBinding binding(*onnx_->session);
-            binding.BindInput(input_names[0], ort_inputs[0]);
-            binding.BindInput(input_names[1], ort_inputs[1]);
-            binding.BindOutput(output_names[0], mem_info);
-            onnx_->session->Run(Ort::RunOptions{nullptr}, binding);
-            binding.SynchronizeOutputs();
-            auto outputs = binding.GetOutputValues();
-
-            if (outputs.empty() || !outputs[0].IsTensor()) {
-                return {"", "onnx_invalid_output"};
-            }
-
-            Ort::TypeInfo type_info = outputs[0].GetTypeInfo();
-            auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
-            if (tensor_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
-                return {"", "onnx_output_not_float32"};
-            }
-
-            const float* audio = outputs[0].GetTensorData<float>();
-            const std::size_t count = tensor_info.GetElementCount();
-            if (!audio || count == 0) {
-                return {"", "onnx_empty_audio"};
-            }
-
-            std::vector<float> pcm(audio, audio + count);
-            return {pcm_f32_to_wav(pcm, cfg_.onnx_sample_rate), ""};
-        } catch (const std::exception& e) {
-            return {"", std::string("onnx_inference_error: ") + e.what()};
-        }
-    }
-#endif
 
     Request parse_request(const std::string& line) {
         Request r;
@@ -826,7 +696,7 @@ private:
         if (clean_text.empty()) {
             return {"", "empty_text"};
         }
-        if (local_api_base_.empty()) {
+        if (local_llama_base_.empty()) {
             return {"", "local_gguf_runtime_not_initialized"};
         }
 
@@ -841,8 +711,8 @@ private:
         payload += "\"response_format\":\"wav\"";
         payload += "}";
 
-        const std::string url = local_api_base_ + "/audio/speech";
-        return http_post_binary_audio(url, payload, cfg_.api_key, cfg_.timeout_seconds);
+        const std::string url = local_llama_base_ + "/audio/speech";
+        return http_post_binary_audio(url, payload, cfg_.timeout_seconds);
     }
 
     std::pair<std::string, std::string> synthesize(
@@ -852,76 +722,22 @@ private:
         const std::vector<std::int64_t>& attention_mask,
         bool has_token_tensors
     ) {
+        (void)token_ids;
+        (void)attention_mask;
+        (void)has_token_tensors;
         if (kSupportedLanguages.find(language) == kSupportedLanguages.end()) {
             return {"", "unsupported_language"};
-        }
-
-        if (cfg_.use_onnx) {
-#ifdef TTS_ENGINE_ENABLE_ONNX
-            if (!has_token_tensors) {
-                return {"", "missing_hf_tokenizer_inputs"};
-            }
-            if (token_ids.size() > kMaxOnnxTokenLength) {
-                return {"", "input_too_long"};
-            }
-            std::size_t start = 0;
-            if (token_ids.size() > kOnnxTokenWindow) {
-                start = token_ids.size() - kOnnxTokenWindow;
-            }
-            std::vector<std::int64_t> window_ids(token_ids.begin() + static_cast<std::ptrdiff_t>(start), token_ids.end());
-            std::vector<std::int64_t> window_mask(attention_mask.begin() + static_cast<std::ptrdiff_t>(start), attention_mask.end());
-            return synthesize_onnx(window_ids, window_mask);
-#else
-            return {"", "onnx_backend_not_compiled"};
-#endif
         }
         if (cfg_.use_local_model) {
             return synthesize_local_gguf(text, language);
         }
-
-        const std::string clean_text = truncate_text(trim(text), cfg_.max_input_chars);
-        if (clean_text.empty()) {
-            return {"", "empty_text"};
-        }
-
-        std::string payload;
-        payload.reserve(256 + clean_text.size());
-        payload += "{";
-        payload += "\"model\":\"" + json_escape(cfg_.model_id) + "\",";
-        payload += "\"input\":\"" + json_escape(clean_text) + "\",";
-        payload += "\"voice\":\"" + json_escape(cfg_.default_voice) + "\",";
-        payload += "\"language\":\"" + json_escape(language) + "\",";
-        payload += "\"response_format\":\"wav\"";
-        payload += "}";
-
-        const std::string url = cfg_.api_base_url + "/audio/speech";
-        return http_post_binary_audio(url, payload, cfg_.api_key, cfg_.timeout_seconds);
+        return {"", "local_model_required"};
     }
 
     void process_request(const Request& req) {
         const auto start = std::chrono::steady_clock::now();
 
         if (req.cmd == "warm_up") {
-            if (cfg_.use_onnx && !req.has_token_tensors) {
-                #ifdef TTS_ENGINE_ENABLE_ONNX
-                static const std::vector<std::int64_t> warm_ids = {1, 2, 3};
-                static const std::vector<std::int64_t> warm_mask = {1, 1, 1};
-                auto warm = synthesize_onnx(warm_ids, warm_mask);
-                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - start).count();
-                if (!warm.second.empty()) {
-                    emit_json_line(req.id, "error", "hi", "", ms, warm.second.substr(0, 256), "warm_up_failed");
-                } else {
-                    emit_json_line(req.id, "ok", "hi", base64_encode_bytes(warm.first), ms, "", "");
-                }
-                return;
-                #else
-                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - start).count();
-                emit_json_line(req.id, "ok", "hi", "", ms, "", "");
-                return;
-                #endif
-            }
             const std::string warm_text = req.text.empty() ? "नमस्ते" : req.text;
             auto result = synthesize(warm_text, "hi", req.token_ids, req.attention_mask, req.has_token_tensors);
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -939,7 +755,8 @@ private:
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - start).count();
             if (!result.second.empty()) {
-                emit_json_line(req.id, "error", req.language, "", ms, result.second.substr(0, 256), "synthesis_failed");
+                const std::string detail = result.second.substr(0, 256);
+                emit_json_line(req.id, "error", req.language, "", ms, detail, detail);
             } else {
                 emit_json_line(req.id, "ok", req.language, base64_encode_bytes(result.first), ms, "", "");
             }
@@ -969,10 +786,7 @@ private:
     std::mutex cv_mu_;
     std::condition_variable cv_;
     std::vector<std::thread> workers_;
-#ifdef TTS_ENGINE_ENABLE_ONNX
-    std::unique_ptr<OnnxRuntimeState> onnx_;
-#endif
-    std::string local_api_base_;
+    std::string local_llama_base_;
 #ifdef __linux__
     pid_t llama_server_pid_ = -1;
 #endif
@@ -980,25 +794,20 @@ private:
 
 EngineConfig parse_daemon_config(int argc, char* argv[]) {
     EngineConfig cfg;
-    // daemon api_base model voice timeout queue workers max_input api_key_or_dash [onnx_threads] [onnx_sample_rate] [llama_cpp_path] [llama_server_port] [explicit_llama_server_path] [gguf_threads] [gguf_context_size] [pin_workers]
-    cfg.api_base_url = (argc > 2) ? argv[2] : "";
-    cfg.model_id = (argc > 3) ? argv[3] : "";
-    cfg.default_voice = (argc > 4) ? argv[4] : "anushka";
-    cfg.timeout_seconds = (argc > 5) ? std::atoi(argv[5]) : 90;
-    cfg.queue_size = (argc > 6) ? std::atoi(argv[6]) : 128;
-    cfg.worker_count = (argc > 7) ? std::atoi(argv[7]) : 2;
-    cfg.max_input_chars = (argc > 8) ? std::atoi(argv[8]) : 600;
-    cfg.api_key = (argc > 9) ? argv[9] : "-";
-    cfg.onnx_threads = (argc > 10) ? std::max(1, std::atoi(argv[10])) : 1;
-    cfg.onnx_sample_rate = (argc > 11) ? std::max(8000, std::atoi(argv[11])) : 24000;
-    cfg.llama_cpp_path = (argc > 12) ? argv[12] : "/app/llama.cpp";
-    cfg.llama_server_port = (argc > 13) ? std::max(1, std::atoi(argv[13])) : 8091;
-    cfg.explicit_llama_server_path = (argc > 14) ? argv[14] : "-";
-    cfg.gguf_threads = (argc > 15) ? std::max(1, std::atoi(argv[15])) : 2;
-    cfg.gguf_context_size = (argc > 16) ? std::max(256, std::atoi(argv[16])) : 1024;
-    cfg.pin_workers = (argc > 17) ? (to_lower(trim(argv[17])) == "true" || trim(argv[17]) == "1") : false;
+    // daemon model voice timeout queue workers max_input llama_cpp_path llama_server_port explicit_llama_server_path gguf_threads gguf_context_size pin_workers
+    cfg.model_id = (argc > 2) ? argv[2] : "";
+    cfg.default_voice = (argc > 3) ? argv[3] : "anushka";
+    cfg.timeout_seconds = (argc > 4) ? std::atoi(argv[4]) : 90;
+    cfg.queue_size = (argc > 5) ? std::atoi(argv[5]) : 128;
+    cfg.worker_count = (argc > 6) ? std::atoi(argv[6]) : 2;
+    cfg.max_input_chars = (argc > 7) ? std::atoi(argv[7]) : 600;
+    cfg.llama_cpp_path = (argc > 8) ? argv[8] : "/app/llama.cpp";
+    cfg.llama_server_port = (argc > 9) ? std::max(1, std::atoi(argv[9])) : 8091;
+    cfg.explicit_llama_server_path = (argc > 10) ? argv[10] : "-";
+    cfg.gguf_threads = (argc > 11) ? std::max(1, std::atoi(argv[11])) : 2;
+    cfg.gguf_context_size = (argc > 12) ? std::max(256, std::atoi(argv[12])) : 1024;
+    cfg.pin_workers = (argc > 13) ? (to_lower(trim(argv[13])) == "true" || trim(argv[13]) == "1") : false;
     cfg.use_local_model = fs::exists(cfg.model_id);
-    cfg.use_onnx = false;  // GGUF-only mode
     return cfg;
 }
 
@@ -1016,27 +825,26 @@ int tts_engine::run_tts_engine(int argc, char* argv[]) {
             std::cerr << "missing_model\n";
             return 2;
         }
-        if (cfg.use_local_model && !cfg.use_onnx &&
+        if (cfg.use_local_model &&
             !ends_with(to_lower(trim(cfg.model_id)), ".gguf")) {
             std::cerr << "invalid_local_model_extension_expected_gguf\n";
             return 2;
         }
-        if (!cfg.use_onnx && !cfg.use_local_model && cfg.api_base_url.empty()) {
-            std::cerr << "missing_api_url_for_http_mode\n";
+        if (!cfg.use_local_model) {
+            std::cerr << "local_model_required\n";
             return 2;
         }
         TTSDaemon daemon(std::move(cfg));
         return daemon.run();
     }
     if (mode == "validate") {
-        if (argc < 4) {
-            std::cerr << "Usage: tts_engine validate <api_base_url_or_dash> <model_id_or_gguf_path> [llama_cpp_path] [explicit_llama_server_path]\n";
+        if (argc < 3) {
+            std::cerr << "Usage: tts_engine validate <model_id_or_gguf_path> [llama_cpp_path] [explicit_llama_server_path]\n";
             return 2;
         }
-        const std::string api_base = argv[2];
-        const std::string model_id = argv[3];
-        const std::string llama_cpp_path = (argc > 4) ? argv[4] : "/app/llama.cpp";
-        const std::string explicit_llama_server_path = (argc > 5) ? argv[5] : "-";
+        const std::string model_id = argv[2];
+        const std::string llama_cpp_path = (argc > 3) ? argv[3] : "/app/llama.cpp";
+        const std::string explicit_llama_server_path = (argc > 4) ? argv[4] : "-";
         if (trim(model_id).empty()) {
             std::cerr << "invalid_configuration\n";
             return 2;
@@ -1052,8 +860,8 @@ int tts_engine::run_tts_engine(int argc, char* argv[]) {
                 std::cerr << "llama_server_not_found_for_local_gguf_mode\n";
                 return 2;
             }
-        } else if (trim(api_base).empty() || api_base == "-") {
-            std::cerr << "invalid_api_base_for_http_mode\n";
+        } else {
+            std::cerr << "local_model_required\n";
             return 2;
         }
         std::cout << "ok";
@@ -1066,3 +874,4 @@ int tts_engine::run_tts_engine(int argc, char* argv[]) {
 int main(int argc, char* argv[]) {
     return tts_engine::run_tts_engine(argc, argv);
 }
+

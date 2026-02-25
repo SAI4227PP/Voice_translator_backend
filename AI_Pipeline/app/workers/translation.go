@@ -79,7 +79,7 @@ func (t *SarvamTranslator) Translate(text, source, target string) (string, error
 			return fmt.Errorf("translation_failed: %v", resp["error"])
 		}
 		raw, _ := resp["translated_text"].(string)
-		out = strings.TrimSpace(raw)
+		out = sanitizeTranslatedText(raw)
 		return nil
 	})
 	return out, err
@@ -98,7 +98,7 @@ func (t *SarvamTranslator) BatchTranslate(texts []string, source, target string)
 		if raw, ok := resp["translated_items"].([]any); ok {
 			out = make([]string, 0, len(raw))
 			for _, v := range raw {
-				out = append(out, fmt.Sprintf("%v", v))
+				out = append(out, sanitizeTranslatedText(fmt.Sprintf("%v", v)))
 			}
 			return nil
 		}
@@ -107,10 +107,40 @@ func (t *SarvamTranslator) BatchTranslate(texts []string, source, target string)
 			out = []string{}
 			return nil
 		}
-		out = strings.Split(text, "\u0000")
+		parts := strings.Split(text, "\u0000")
+		out = make([]string, 0, len(parts))
+		for _, p := range parts {
+			out = append(out, sanitizeTranslatedText(p))
+		}
 		return nil
 	})
 	return out, err
+}
+
+func sanitizeTranslatedText(v string) string {
+	s := strings.TrimSpace(v)
+	for strings.HasPrefix(s, "<") {
+		end := strings.Index(s, ">")
+		if end <= 1 {
+			break
+		}
+		tag := s[1:end]
+		if !isAlphaNumTag(tag) {
+			break
+		}
+		s = strings.TrimSpace(s[end+1:])
+	}
+	return s
+}
+
+func isAlphaNumTag(v string) bool {
+	for _, r := range v {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return v != ""
 }
 
 func (t *SarvamTranslator) ensureStarted() error {

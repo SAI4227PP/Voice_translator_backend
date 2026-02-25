@@ -70,18 +70,12 @@ type Settings struct {
 	TranslationCommonPairsParsed [][2]string
 
 	SvaraModelID          string
-	SvaraAPIBaseURL       string
-	SvaraAPIKey           string
 	SvaraTimeoutSeconds   int
 	SvaraMaxInputChars    int
 	SvaraDefaultVoice     string
 	SvaraCppBinaryPath    string
 	SvaraDaemonWorkers    int
 	SvaraDaemonQueueSize  int
-	SvaraOnnxModelPath    string
-	SvaraTokenizerID      string
-	SvaraOnnxThreads      int
-	SvaraOnnxSampleRate   int
 	SvaraThreads          int
 	SvaraContextSize      int
 	SvaraPinWorkers       bool
@@ -173,19 +167,13 @@ func LoadSettings() Settings {
 		TranslationWarmStartMode:    env("TRANSLATION_WARM_START_MODE", "common"),
 		TranslationCommonPairs:      env("TRANSLATION_COMMON_PAIRS", "en-hi,hi-en,en-bn,bn-en"),
 
-		SvaraModelID:         env("SVARA_TTS_MODEL_ID", "kenpath/svara-tts-v1"),
-		SvaraAPIBaseURL:      env("SVARA_TTS_API_BASE_URL", ""),
-		SvaraAPIKey:          env("SVARA_TTS_API_KEY", ""),
+		SvaraModelID:         env("SVARA_TTS_MODEL_ID", "/app/llm-models/svara-tts-v1.Q5_K_M.gguf"),
 		SvaraTimeoutSeconds:  envInt("SVARA_TTS_TIMEOUT_SECONDS", 90),
 		SvaraMaxInputChars:   envInt("SVARA_TTS_MAX_INPUT_CHARS", 600),
 		SvaraDefaultVoice:    env("SVARA_TTS_DEFAULT_VOICE", "anushka"),
 		SvaraCppBinaryPath:   env("SVARA_TTS_CPP_BINARY_PATH", "/app/bin/tts_engine"),
 		SvaraDaemonWorkers:   envInt("SVARA_TTS_DAEMON_WORKERS", envInt("TTS_DAEMON_WORKERS", 2)),
 		SvaraDaemonQueueSize: envInt("SVARA_TTS_DAEMON_QUEUE_SIZE", 128),
-		SvaraOnnxModelPath:   env("SVARA_TTS_ONNX_MODEL_PATH", "models/tts/svara/svara_tts.onnx"),
-		SvaraTokenizerID:     env("SVARA_TTS_TOKENIZER_ID", "kenpath/svara-tts-v1"),
-		SvaraOnnxThreads:     envInt("SVARA_TTS_ONNX_THREADS", envInt("ONNX_THREADS", 1)),
-		SvaraOnnxSampleRate:  envInt("SVARA_TTS_ONNX_SAMPLE_RATE", envInt("ONNX_SAMPLE_RATE", 24000)),
 		SvaraThreads:         envInt("SVARA_TTS_THREADS", 2),
 		SvaraContextSize:     envInt("SVARA_TTS_CONTEXT_SIZE", 1024),
 		SvaraPinWorkers:      envBool("SVARA_TTS_PIN_WORKERS", false),

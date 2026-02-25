@@ -21,17 +21,12 @@ type Settings struct {
 	TranslationBreakerResetSecs int
 
 	SvaraCppBinaryPath   string
-	SvaraAPIBaseURL      string
 	SvaraModelID         string
-	SvaraOnnxModelPath   string
 	SvaraDefaultVoice    string
 	SvaraTimeoutSeconds  int
 	SvaraDaemonQueueSize int
 	SvaraDaemonWorkers   int
 	SvaraMaxInputChars   int
-	SvaraAPIKey          string
-	SvaraOnnxThreads     int
-	SvaraOnnxSampleRate  int
 	SvaraThreads         int
 	SvaraContextSize     int
 	SvaraPinWorkers      bool

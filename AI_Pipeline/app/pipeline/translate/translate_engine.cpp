@@ -333,14 +333,47 @@ std::string strip_trailing_newlines(const std::string& input) {
 
 std::string build_prompt(const std::string& text, const std::string& source_lang, const std::string& target_lang) {
     const std::string clean_text = strip_trailing_newlines(text);
+    auto lang_name = [](const std::string& code) -> const char* {
+        if (code == "en") return "English";
+        if (code == "hi") return "Hindi";
+        if (code == "ta") return "Tamil";
+        if (code == "te") return "Telugu";
+        if (code == "bn") return "Bengali";
+        if (code == "gu") return "Gujarati";
+        if (code == "kn") return "Kannada";
+        if (code == "ml") return "Malayalam";
+        if (code == "mr") return "Marathi";
+        if (code == "or") return "Odia";
+        if (code == "pa") return "Punjabi";
+        if (code == "ur") return "Urdu";
+        if (code == "as") return "Assamese";
+        if (code == "brx") return "Bodo";
+        if (code == "doi") return "Dogri";
+        if (code == "kok") return "Konkani";
+        if (code == "ks") return "Kashmiri";
+        if (code == "mai") return "Maithili";
+        if (code == "mni") return "Manipuri";
+        if (code == "ne") return "Nepali";
+        if (code == "sa") return "Sanskrit";
+        if (code == "sat") return "Santali";
+        if (code == "sd") return "Sindhi";
+        return "target language";
+    };
     std::string prompt;
-    prompt.reserve(clean_text.size() + 24);
+    prompt.reserve(clean_text.size() + 196);
     prompt += "<";
     prompt += source_lang;
     prompt += "2";
     prompt += target_lang;
-    prompt += ">";
+    prompt += ">\nTranslate the following text from ";
+    prompt += lang_name(source_lang);
+    prompt += " to ";
+    prompt += lang_name(target_lang);
+    prompt += ". Return only translated text in ";
+    prompt += lang_name(target_lang);
+    prompt += ".\nText: ";
     prompt += clean_text;
+    prompt += "\nTranslation:";
     return prompt;
 }
 
@@ -810,9 +843,6 @@ public:
             workers_.emplace_back(&TranslationDaemon::worker_loop, this, i);
         }
 
-        // Prime KV slots across supported language pairs in the background.
-        warmup_thread_ = std::thread(&TranslationDaemon::warm_all_pairs, this);
-
         std::string line;
         while (std::getline(std::cin, line)) {
             if (trim(line).empty()) continue;
@@ -836,9 +866,6 @@ public:
         cv_.notify_all();
         for (auto& w : workers_) {
             if (w.joinable()) w.join();
-        }
-        if (warmup_thread_.joinable()) {
-            warmup_thread_.join();
         }
         stop_llama_server();
         curl_global_cleanup();
@@ -968,7 +995,7 @@ private:
 
     std::pair<std::string, std::string> translate_text(const std::string& text, const std::string& source, const std::string& target) {
         const std::string limited = truncate_text(text, cfg_.max_input_chars);
-        const std::string compact = take_tail_window(strip_trailing_newlines(limited), 6, 320);
+        const std::string compact = strip_trailing_newlines(limited);
         const int n_predict = adaptive_max_tokens(compact, cfg_.max_tokens);
         const std::string prompt = build_prompt(compact, source, target);
         const int slot = slot_for_pair(source, target);
@@ -981,7 +1008,7 @@ private:
         payload.append(escaped_prompt);
         payload.append("\",\"n_predict\":");
         payload.append(std::to_string(n_predict));
-        payload.append(",\"temperature\":0.2,\"top_p\":0.95,\"cache_prompt\":true,\"stream\":true,\"id_slot\":");
+        payload.append(",\"temperature\":0.01,\"top_p\":0.9,\"repeat_penalty\":1.1,\"cache_prompt\":true,\"stream\":true,\"id_slot\":");
         payload.append(std::to_string(slot));
         payload.push_back('}');
 
@@ -998,26 +1025,16 @@ private:
         return {content, ""};
     }
 
-    void warm_all_pairs() {
-        for (const auto& pair : kWarmupPairs) {
-            if (stop_.load()) {
-                return;
-            }
-            translate_text("test", pair[0], pair[1]);
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        }
-    }
-
     void process_request(const Request& req) {
         const auto start = std::chrono::steady_clock::now();
 
         if (req.cmd == "warm_up") {
-            auto result = translate_text("test", "hi", "ta");
+            auto result = translate_text("test", "en", "hi");
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
             if (!result.second.empty()) {
-                emit_json_line(req.id, "error", "hi", "ta", "test", "", ms, result.second.substr(0, 256), "warm_up_failed");
+                emit_json_line(req.id, "error", "en", "hi", "test", "", ms, result.second.substr(0, 256), "warm_up_failed");
             } else {
-                emit_json_line(req.id, "ok", "hi", "ta", "test", "", ms, "", "");
+                emit_json_line(req.id, "ok", "en", "hi", "test", "", ms, "", "");
             }
             return;
         }
@@ -1135,7 +1152,6 @@ private:
     std::mutex cv_mu_;
     std::condition_variable cv_;
     std::vector<std::thread> workers_;
-    std::thread warmup_thread_;
     pid_t llama_server_pid_ = -1;
 };
 

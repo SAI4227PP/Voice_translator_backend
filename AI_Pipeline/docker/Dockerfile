@@ -424,7 +424,6 @@ ENV HOST=0.0.0.0 \
     TTS_ENGINE=svara \
     SVARA_TTS_CPP_BINARY_PATH=/app/bin/tts_engine \
     SVARA_TTS_MODEL_ID=/app/llm-models/svara-tts-v1.Q5_K_M.gguf \
-    SVARA_TTS_TOKENIZER_ID=kenpath/svara-tts-v1 \
     SVARA_TTS_TIMEOUT_SECONDS=90 \
     SVARA_TTS_MAX_INPUT_CHARS=600 \
     SVARA_TTS_DEFAULT_VOICE=anushka \

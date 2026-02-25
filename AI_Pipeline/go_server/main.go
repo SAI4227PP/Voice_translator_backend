@@ -104,11 +104,18 @@ func main() {
 	}
 	server.SetMessageRouter(messaging.NewMessageRouter(state.roomMgr, server.GetConnectionManager()))
 
+	log.Printf("startup_phase=warm_start status=begin translation=%t tts=%t stt=%t",
+		state.settings.TranslationEnableWarmStart,
+		state.settings.TTSEnableWarmStart,
+		state.settings.STTEnableWarmStart,
+	)
 	warmStart(state)
+	log.Printf("startup_phase=warm_start status=done")
 	defer state.translator.Close()
 	defer state.tts.Close()
 
 	grpcAddr := settings.Host + ":" + strconv.Itoa(settings.GRPCPort)
+	log.Printf("startup_phase=grpc_server status=begin addr=%s", grpcAddr)
 	stopGRPC, err := grpcserver.Start(grpcAddr, grpcserver.Dependencies{
 		Settings:   settings,
 		Scanner:    state.scanner,
@@ -119,12 +126,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("grpc_server_start_failed addr=%s error=%v", grpcAddr, err)
 	}
+	log.Printf("startup_phase=grpc_server status=done addr=%s", grpcAddr)
 	defer stopGRPC()
 
+	log.Printf("startup_phase=http_grpc_bridge status=begin target=%s", state.internalGRPCAddress())
 	if err := state.initInternalGRPCClients(); err != nil {
 		log.Fatalf("http_grpc_bridge_init_failed error=%v", err)
 	}
-	log.Printf("http_grpc_bridge_enabled target=%s", state.internalGRPCAddress())
+	log.Printf("startup_phase=http_grpc_bridge status=done target=%s", state.internalGRPCAddress())
 	defer state.closeInternalGRPCClients()
 
 	mux := http.NewServeMux()
@@ -304,7 +313,6 @@ func (a *appState) configHandler(w http.ResponseWriter, r *http.Request) {
 			"tts_engine":            a.settings.TTSEngine,
 			"vosk_model_base_path":  a.settings.VoskModelBasePath,
 			"svara_tts_model_id":    a.settings.SvaraModelID,
-			"svara_tts_api_base_url": a.settings.SvaraAPIBaseURL,
 			"available_models": map[string]any{
 				"stt":         sttLangs,
 				"translation": translationLangs,
@@ -975,17 +983,12 @@ func toWorkerSettings(s config.Settings) workers.Settings {
 		TranslationBreakerResetSecs: s.TranslationBreakerResetSecs,
 
 		SvaraCppBinaryPath:   s.SvaraCppBinaryPath,
-		SvaraAPIBaseURL:      s.SvaraAPIBaseURL,
 		SvaraModelID:         s.SvaraModelID,
-		SvaraOnnxModelPath:   s.SvaraOnnxModelPath,
 		SvaraDefaultVoice:    s.SvaraDefaultVoice,
 		SvaraTimeoutSeconds:  s.SvaraTimeoutSeconds,
 		SvaraDaemonQueueSize: s.SvaraDaemonQueueSize,
 		SvaraDaemonWorkers:   s.SvaraDaemonWorkers,
 		SvaraMaxInputChars:   s.SvaraMaxInputChars,
-		SvaraAPIKey:          s.SvaraAPIKey,
-		SvaraOnnxThreads:     s.SvaraOnnxThreads,
-		SvaraOnnxSampleRate:  s.SvaraOnnxSampleRate,
 		SvaraThreads:         s.SvaraThreads,
 		SvaraContextSize:     s.SvaraContextSize,
 		SvaraPinWorkers:      s.SvaraPinWorkers,

@@ -51,7 +51,11 @@ func (t *SvaraTTS) Synthesize(language, text string) ([]byte, error) {
 		return nil, err
 	}
 	if resp["status"] != "ok" {
-		return nil, fmt.Errorf("tts_failed: %v", resp["error"])
+		msg := fmt.Sprintf("%v", resp["error"])
+		if snippet, _ := resp["stderr_snippet"].(string); strings.TrimSpace(snippet) != "" {
+			msg = fmt.Sprintf("%s (stderr_snippet=%s)", msg, strings.TrimSpace(snippet))
+		}
+		return nil, fmt.Errorf("tts_failed: %s", msg)
 	}
 	audioB64, _ := resp["audio_b64"].(string)
 	if audioB64 == "" {
@@ -67,7 +71,7 @@ func (t *SvaraTTS) ensureStarted() error {
 		return nil
 	}
 
-	apiBase, modelRef, err := resolveTTSRuntimeConfig(t.settings)
+	modelRef, err := resolveTTSRuntimeConfig(t.settings)
 	if err != nil {
 		t.mu.Unlock()
 		return err
@@ -76,7 +80,6 @@ func (t *SvaraTTS) ensureStarted() error {
 	validate := exec.Command(
 		t.settings.SvaraCppBinaryPath,
 		"validate",
-		apiBase,
 		modelRef,
 		valueOrDash(t.settings.LlamaCppPath, "/app/llama.cpp"),
 		"-",
@@ -88,16 +91,12 @@ func (t *SvaraTTS) ensureStarted() error {
 
 	args := []string{
 		"daemon",
-		apiBase,
 		modelRef,
 		t.settings.SvaraDefaultVoice,
 		fmt.Sprintf("%d", t.settings.SvaraTimeoutSeconds),
 		fmt.Sprintf("%d", t.settings.SvaraDaemonQueueSize),
 		fmt.Sprintf("%d", t.settings.SvaraDaemonWorkers),
 		fmt.Sprintf("%d", t.settings.SvaraMaxInputChars),
-		valueOrDash(t.settings.SvaraAPIKey, "-"),
-		fmt.Sprintf("%d", t.settings.SvaraOnnxThreads),
-		fmt.Sprintf("%d", t.settings.SvaraOnnxSampleRate),
 		valueOrDash(t.settings.LlamaCppPath, "/app/llama.cpp"),
 		fmt.Sprintf("%d", t.settings.LlamaServerPort+1),
 		"-",
@@ -139,21 +138,16 @@ func (t *SvaraTTS) ensureStarted() error {
 	return nil
 }
 
-func resolveTTSRuntimeConfig(s Settings) (apiBase string, modelRef string, err error) {
+func resolveTTSRuntimeConfig(s Settings) (modelRef string, err error) {
 	modelID := strings.TrimSpace(s.SvaraModelID)
 	if modelID == "" {
-		return "", "", errors.New("tts model ref missing; set SVARA_TTS_MODEL_ID (GGUF mode)")
+		return "", errors.New("tts model ref missing; set SVARA_TTS_MODEL_ID to local GGUF path")
 	}
 	if st, statErr := os.Stat(modelID); statErr == nil && !st.IsDir() {
-		// Local model path mode (e.g. GGUF/ONNX file).
-		return "-", modelID, nil
+		// Local GGUF model path mode.
+		return modelID, nil
 	}
-
-	apiBase = strings.TrimSpace(s.SvaraAPIBaseURL)
-	if apiBase == "" || apiBase == "-" {
-		return "", "", errors.New("non-local TTS mode requires SVARA_TTS_API_BASE_URL")
-	}
-	return apiBase, modelID, nil
+	return "", fmt.Errorf("local TTS model not found at '%s'; API mode is disabled, set SVARA_TTS_MODEL_ID to a local .gguf path", modelID)
 }
 
 func (t *SvaraTTS) readLoop() {
@@ -223,7 +217,11 @@ func (t *SvaraTTS) sendRequest(cmd, language, text string) (map[string]any, erro
 	select {
 	case resp := <-ch:
 		if status, _ := resp["status"].(string); status == "error" {
-			return nil, errors.New(fmt.Sprintf("%v", resp["error"]))
+			msg := fmt.Sprintf("%v", resp["error"])
+			if snippet, _ := resp["stderr_snippet"].(string); strings.TrimSpace(snippet) != "" {
+				msg = fmt.Sprintf("%s (stderr_snippet=%s)", msg, strings.TrimSpace(snippet))
+			}
+			return nil, errors.New(msg)
 		}
 		return resp, nil
 	case <-time.After(timeout):
@@ -232,13 +230,6 @@ func (t *SvaraTTS) sendRequest(cmd, language, text string) (map[string]any, erro
 		t.mu.Unlock()
 		return nil, errors.New("tts timeout")
 	}
-}
-
-func modelRef(s Settings) string {
-	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(s.SvaraOnnxModelPath)), ".onnx") {
-		return s.SvaraOnnxModelPath
-	}
-	return s.SvaraModelID
 }
 
 func valueOrDash(v, d string) string {
