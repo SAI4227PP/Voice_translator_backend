@@ -285,6 +285,17 @@ std::string resolve_llama_tts_path(const std::string& llama_cpp_path, const std:
     );
 }
 
+std::string resolve_vocoder_path(const std::string& configured) {
+    if (!trim(configured).empty() && configured != "-" && fs::exists(configured)) {
+        return configured;
+    }
+    const char* kDefault = "/app/llm-models/svara-tts-v1-backbone-f16.gguf";
+    if (fs::exists(kDefault)) {
+        return kDefault;
+    }
+    return "";
+}
+
 #ifdef __linux__
 bool wait_for_port_ready(int port, int timeout_ms, pid_t server_pid) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
@@ -573,10 +584,12 @@ private:
             err = "local_model_not_found";
             return false;
         }
-        if (!trim(cfg_.vocoder_model).empty() && cfg_.vocoder_model != "-" && !fs::exists(cfg_.vocoder_model)) {
-            err = "vocoder_model_not_found";
+        const std::string resolved_vocoder = resolve_vocoder_path(cfg_.vocoder_model);
+        if (resolved_vocoder.empty()) {
+            err = "vocoder_model_not_found (set SVARA_TTS_VOCODER_MODEL=/app/llm-models/svara-tts-v1-backbone-f16.gguf)";
             return false;
         }
+        cfg_.vocoder_model = resolved_vocoder;
         llama_tts_path_ = llama_tts;
         return true;
 #else
@@ -866,7 +879,7 @@ private:
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - start).count();
             if (!result.second.empty()) {
-                emit_json_line(req.id, "error", "hi", "", ms, result.second.substr(0, 256), "warm_up_failed");
+                emit_json_line(req.id, "error", "hi", "", ms, result.second.substr(0, 1500), "warm_up_failed");
             } else {
                 emit_json_line(req.id, "ok", "hi", base64_encode_bytes(result.first), ms, "", "");
             }
@@ -878,7 +891,7 @@ private:
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - start).count();
             if (!result.second.empty()) {
-                const std::string detail = result.second.substr(0, 256);
+                const std::string detail = result.second.substr(0, 1500);
                 emit_json_line(req.id, "error", req.language, "", ms, detail, detail);
             } else {
                 emit_json_line(req.id, "ok", req.language, base64_encode_bytes(result.first), ms, "", "");
