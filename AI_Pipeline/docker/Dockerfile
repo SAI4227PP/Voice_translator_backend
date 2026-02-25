@@ -10,9 +10,9 @@
 # ======================================================
 
 # -------------------------------
-# Shared Python base (shared runtime apt deps)
+# Runtime base (no compilers)
 # -------------------------------
-FROM python:3.11-slim AS python-base
+FROM python:3.11-slim AS runtime-base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -37,17 +37,13 @@ RUN --mount=type=cache,id=vtb-apt-cache,target=/var/cache/apt,sharing=locked \
     && rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
-# Runtime base (no compilers)
-# -------------------------------
-FROM python-base AS runtime-base
-
-# -------------------------------
 # Build base (toolchains)
 # -------------------------------
-FROM python-base AS build-base
+FROM python:3.11-slim AS build-base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONOPTIMIZE=2 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     DEBIAN_FRONTEND=noninteractive \
     CCACHE_DIR=/root/.cache/ccache
@@ -267,7 +263,7 @@ RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
 # -------------------------------
 # Model downloader image (standalone setup target)
 # -------------------------------
-FROM python-base AS model-downloader
+FROM runtime-base AS model-downloader
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
