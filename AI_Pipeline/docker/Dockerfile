@@ -26,6 +26,7 @@ RUN --mount=type=cache,id=vtb-apt-cache,target=/var/cache/apt,sharing=locked \
     libstdc++6 \
     libgcc-s1 \
     libgomp1 \
+    libopenblas0-pthread \
     libportaudio2 \
     libsndfile1 \
     ffmpeg \
