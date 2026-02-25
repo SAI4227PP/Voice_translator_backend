@@ -67,8 +67,14 @@ func (t *SarvamTranslator) WarmUpCommonPairs(pairs [][2]string) {
 			continue
 		}
 		seen[key] = struct{}{}
-		if _, err := t.Translate("warmup", src, tgt); err != nil {
+		// Warm-up should not mutate circuit-breaker state. Use direct daemon call.
+		resp, err := t.sendRequest("translate", src, tgt, "warmup", nil)
+		if err != nil {
 			log.Printf("translation_warmup_pair_failed pair=%s error=%v", key, err)
+			continue
+		}
+		if status, _ := resp["status"].(string); status != "ok" {
+			log.Printf("translation_warmup_pair_failed pair=%s error=%v", key, resp["error"])
 		}
 	}
 }
@@ -417,8 +423,10 @@ func (t *SarvamTranslator) onFailure() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.consecutiveFailures++
+	log.Printf("translation_failure_count count=%d threshold=%d", t.consecutiveFailures, t.settings.TranslationBreakerThreshold)
 	if t.consecutiveFailures >= t.settings.TranslationBreakerThreshold {
 		t.breakerOpenUntil = time.Now().Add(time.Duration(t.settings.TranslationBreakerResetSecs) * time.Second)
+		log.Printf("translation_circuit_opened until=%s", t.breakerOpenUntil.Format(time.RFC3339))
 	}
 }
 

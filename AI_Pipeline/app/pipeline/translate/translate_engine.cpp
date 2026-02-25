@@ -483,33 +483,17 @@ std::string normalize_compare_text(const std::string& text) {
     return out;
 }
 
-bool should_expect_non_ascii_target(const std::string& target) {
-    return target != "en";
-}
-
 bool looks_like_untranslated_output(const std::string& source, const std::string& translated, const std::string& target) {
+    (void)target;
     const std::string src_norm = normalize_compare_text(source);
     const std::string out_norm = normalize_compare_text(translated);
+    if (out_norm.empty()) {
+        return true;
+    }
     if (!src_norm.empty() && src_norm == out_norm) {
         return true;
     }
-
-    if (!should_expect_non_ascii_target(target)) {
-        return false;
-    }
-
-    int ascii_letters = 0;
-    int non_ascii_bytes = 0;
-    for (unsigned char c : translated) {
-        if (c < 0x80) {
-            if (std::isalpha(c)) {
-                ++ascii_letters;
-            }
-        } else {
-            ++non_ascii_bytes;
-        }
-    }
-    return non_ascii_bytes == 0 && ascii_letters >= 4;
+    return false;
 }
 
 int slot_for_pair(const std::string& source, const std::string& target) {
