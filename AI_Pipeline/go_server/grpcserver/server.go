@@ -186,6 +186,7 @@ func (s *Service) Translate(_ context.Context, req *pb.TranslationRequest) (*pb.
 	start := time.Now()
 	translated, err := s.deps.Translator.Translate(req.GetText(), source, target)
 	if err != nil {
+		log.Printf("grpc_translate_failed source=%s target=%s error=%v", source, target, err)
 		return nil, mapWorkerError(err)
 	}
 	return &pb.TranslationResponse{

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os/exec"
 	"strings"
 	"sync"
@@ -163,6 +164,7 @@ func (t *SarvamTranslator) ensureStarted() error {
 		t.settings.SarvamModelPath,
 	)
 	if out, err := validate.CombinedOutput(); err != nil {
+		log.Printf("translation_daemon_validate_failed error=%v output=%s", err, strings.TrimSpace(string(out)))
 		return fmt.Errorf("translation validation failed: %s (%w)", strings.TrimSpace(string(out)), err)
 	}
 
@@ -194,6 +196,7 @@ func (t *SarvamTranslator) ensureStarted() error {
 		return err
 	}
 	if err := cmd.Start(); err != nil {
+		log.Printf("translation_daemon_start_failed error=%v", err)
 		return err
 	}
 
@@ -203,6 +206,7 @@ func (t *SarvamTranslator) ensureStarted() error {
 	t.started = true
 	go t.readLoop()
 	go t.stderrLoop(stderr)
+	log.Printf("translation_daemon_started model=%s port=%d workers=%d", t.settings.SarvamModelPath, t.settings.LlamaServerPort, t.settings.SarvamWorkers)
 	return nil
 }
 
@@ -282,6 +286,7 @@ func (t *SarvamTranslator) failPending(err error) {
 		ch <- map[string]any{"id": id, "status": "error", "error": msg}
 	}
 	t.pending = map[string]chan map[string]any{}
+	log.Printf("translation_daemon_readloop_failed error=%s", msg)
 }
 
 func (t *SarvamTranslator) sendRequest(cmd, source, target, text string, texts []string) (map[string]any, error) {
@@ -348,6 +353,7 @@ func (t *SarvamTranslator) sendRequest(cmd, source, target, text string, texts [
 
 func (t *SarvamTranslator) executeWithResilience(fn func() error) error {
 	if t.isCircuitOpen() {
+		log.Printf("translation_circuit_open")
 		return errors.New("translation circuit breaker is open")
 	}
 	retries := t.settings.TranslationRetryCount
@@ -359,6 +365,7 @@ func (t *SarvamTranslator) executeWithResilience(fn func() error) error {
 			return nil
 		}
 		lastErr = err
+		log.Printf("translation_attempt_failed attempt=%d/%d error=%v", attempt+1, retries+1, err)
 		t.onFailure()
 		if attempt >= retries {
 			break

@@ -922,6 +922,7 @@ func (a *appState) translateText(text, source, target string) (string, error) {
 		TargetLang: target,
 	})
 	if err != nil {
+		log.Printf("http_translate_grpc_failed source=%s target=%s error=%v", source, target, err)
 		return "", err
 	}
 	return resp.GetTranslatedText(), nil
@@ -941,6 +942,7 @@ func (a *appState) batchTranslateTexts(texts []string, source, target string) ([
 
 	stream, err := a.translationGRPC.TranslateStream(ctx)
 	if err != nil {
+		log.Printf("http_batch_translate_grpc_stream_open_failed source=%s target=%s error=%v", source, target, err)
 		return nil, err
 	}
 
@@ -951,10 +953,12 @@ func (a *appState) batchTranslateTexts(texts []string, source, target string) ([
 			SourceLang: source,
 			TargetLang: target,
 		}); err != nil {
+			log.Printf("http_batch_translate_grpc_send_failed source=%s target=%s error=%v", source, target, err)
 			return nil, err
 		}
 		resp, recvErr := stream.Recv()
 		if recvErr != nil {
+			log.Printf("http_batch_translate_grpc_recv_failed source=%s target=%s error=%v", source, target, recvErr)
 			return nil, recvErr
 		}
 		out = append(out, resp.GetTranslatedText())

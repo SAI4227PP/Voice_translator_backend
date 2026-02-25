@@ -151,7 +151,7 @@ func LoadSettings() Settings {
 		SarvamMaxTokens:   envInt("SARVAM_MAX_TOKENS", 256),
 		SarvamContextSize: envInt("SARVAM_CONTEXT_SIZE", 2048),
 		SarvamThreads:     envInt("SARVAM_THREADS", 4),
-		SarvamTimeout:     envInt("SARVAM_TIMEOUT_SECONDS", 120),
+		SarvamTimeout:     envInt("SARVAM_TIMEOUT_SECONDS", 30),
 		SarvamMaxConcurrentProcesses: envInt("SARVAM_MAX_CONCURRENT_PROCESSES", 1),
 		SarvamWorkers:     envInt("SARVAM_DAEMON_WORKERS", 2),
 		SarvamQueueSize:   envInt("SARVAM_DAEMON_QUEUE_SIZE", 256),
@@ -159,7 +159,7 @@ func LoadSettings() Settings {
 		SarvamGpuLayers:    envInt("SARVAM_GPU_LAYERS", 0),
 		LlamaServerPort:    envInt("LLAMA_SERVER_PORT", 8089),
 
-		TranslationRetryCount:       envInt("TRANSLATION_RETRY_COUNT", 2),
+		TranslationRetryCount:       envInt("TRANSLATION_RETRY_COUNT", 1),
 		TranslationRetryBackoffMs:   envInt("TRANSLATION_RETRY_BACKOFF_MS", 250),
 		TranslationBreakerThreshold: envInt("TRANSLATION_CIRCUIT_BREAKER_THRESHOLD", 5),
 		TranslationBreakerResetSecs: envInt("TRANSLATION_CIRCUIT_BREAKER_RESET_SECONDS", 30),
