@@ -245,6 +245,10 @@ func (t *SarvamTranslator) stderrLoop(r io.Reader) {
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
+			chunk := strings.TrimSpace(string(buf[:n]))
+			if chunk != "" {
+				log.Printf("translation_daemon_stderr chunk=%s", chunk)
+			}
 			t.mu.Lock()
 			t.stderr.Write(buf[:n])
 			if t.stderr.Len() > 4000 {
