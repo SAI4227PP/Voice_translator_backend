@@ -2,7 +2,8 @@ services:
   model-downloader:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.downloader
+      dockerfile: docker/Dockerfile
+      target: model-downloader
     volumes:
       - voice-models:/app/models
     environment:
@@ -37,7 +38,7 @@ services:
       - TRANSLATION_ENGINE=sarvam
       # Translator model format: GGUF Q4_K_M
       - SARVAM_MODEL_PATH=/app/llm-models/sarvam-1-q4.gguf
-      - SARVAM_CPP_BINARY_PATH=/app/app/pipeline/translate/translate_engine
+      - SARVAM_CPP_BINARY_PATH=/app/bin/translate_engine
       - SARVAM_MAX_CONCURRENT_PROCESSES=1
       - SARVAM_DAEMON_WORKERS=2
       - SARVAM_DAEMON_QUEUE_SIZE=256
@@ -53,8 +54,6 @@ services:
       - NUMBA_CACHE_DIR=/tmp/numba_cache
       - XDG_CACHE_HOME=/tmp
       - HOME=/app
-      - PIP_NO_INPUT=1
-      - PIP_USER=0
       - STT_ENABLE_WARM_START=True
       - STT_PRELOAD_LANGUAGES=en,hi
       - TRANSLATION_ENABLE_WARM_START=True
@@ -62,13 +61,9 @@ services:
       - TRANSLATION_COMMON_PAIRS=en-hi,hi-en,en-bn,bn-en
       - TTS_ENGINE=svara
       # TTS model format: GGUF (local path)
-      - SVARA_TTS_CPP_BINARY_PATH=/app/app/pipeline/tts/tts_engine
+      - SVARA_TTS_CPP_BINARY_PATH=/app/bin/tts_engine
       - SVARA_TTS_MODEL_ID=/app/llm-models/${SVARA_TTS_GGUF_FILE:-svara-tts-v1.Q5_K_M.gguf}
-      - SVARA_TTS_ONNX_MODEL_PATH=
       - SVARA_TTS_TOKENIZER_ID=kenpath/svara-tts-v1
-      - TTS_DAEMON_WORKERS=2
-      - SVARA_TTS_API_BASE_URL=
-      - SVARA_TTS_API_KEY=
       - SVARA_TTS_TIMEOUT_SECONDS=90
       - SVARA_TTS_MAX_INPUT_CHARS=600
       - SVARA_TTS_DEFAULT_VOICE=anushka

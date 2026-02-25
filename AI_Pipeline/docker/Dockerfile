@@ -9,17 +9,18 @@
 # ======================================================
 
 # -------------------------------
-# Runtime base (no compilers)
+# Shared Python base (shared runtime apt deps)
 # -------------------------------
-FROM python:3.11-slim AS runtime-base
+FROM python:3.11-slim AS python-base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONOPTIMIZE=2 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     DEBIAN_FRONTEND=noninteractive
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,id=vtb-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=vtb-apt-lib,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     libstdc++6 \
     libgcc-s1 \
@@ -34,9 +35,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
+# Runtime base (no compilers)
+# -------------------------------
+FROM python-base AS runtime-base
+
+# -------------------------------
 # Build base (toolchains)
 # -------------------------------
-FROM python:3.11-slim AS build-base
+FROM python-base AS build-base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -44,26 +50,25 @@ ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
     CCACHE_DIR=/root/.cache/ccache
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,id=vtb-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=vtb-apt-lib,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     g++ \
+    python3-dev \
+    libpython3-dev \
     ccache \
     cmake \
     make \
+    tar \
     portaudio19-dev \
-    libsndfile1 \
     libsndfile1-dev \
     libopenblas-dev \
-    ffmpeg \
     libcurl4-openssl-dev \
     curl \
     wget \
     git \
-    ca-certificates \
-    espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
@@ -82,18 +87,36 @@ RUN find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} +
     find /usr/local/lib/python3.11 -type f -name "*.pyc" -delete
 
 # -------------------------------
+# llama.cpp source (pin/ref cache boundary)
+# -------------------------------
+FROM build-base AS llama-source
+WORKDIR /work
+
+ARG LLAMA_CPP_REPO=https://github.com/ggerganov/llama.cpp
+ARG LLAMA_CPP_REF=master
+
+RUN --mount=type=cache,id=vtb-git-cache,target=/root/.cache/git \
+    git init /work/llama.cpp && \
+    cd /work/llama.cpp && \
+    git remote add origin "${LLAMA_CPP_REPO}" && \
+    git fetch --depth 1 origin "${LLAMA_CPP_REF}" && \
+    git checkout --detach FETCH_HEAD
+
+# -------------------------------
 # llama.cpp build
 # -------------------------------
 FROM build-base AS llama-build
 WORKDIR /work
 
-RUN --mount=type=cache,target=/root/.cache/ccache \
-    git clone --depth 1 https://github.com/ggerganov/llama.cpp /work/llama.cpp && \
+COPY --from=llama-source /work/llama.cpp /work/llama.cpp
+
+RUN --mount=type=cache,id=vtb-ccache,target=/root/.cache/ccache \
     CC="ccache gcc" CXX="ccache g++" cmake -S /work/llama.cpp -B /work/llama.cpp/build \
       -DCMAKE_BUILD_TYPE=Release \
       -DGGML_BLAS=ON \
       -DGGML_BLAS_VENDOR=OpenBLAS && \
     cmake --build /work/llama.cpp/build -j"$(nproc)" && \
+    find /work/llama.cpp/build -type f -executable -exec strip --strip-unneeded {} + 2>/dev/null || true && \
     mkdir -p /work/llama-runtime/bin && \
     if [ -d /work/llama.cpp/build/bin ]; then \
       cp -a /work/llama.cpp/build/bin/. /work/llama-runtime/bin/; \
@@ -239,6 +262,35 @@ RUN --mount=type=cache,id=vtb-model-cache,target=/work/model-cache \
     echo "Using local Svara GGUF model: /work/llm-models/${SVARA_TTS_GGUF_FILE}"
 
 # -------------------------------
+# Model downloader image (standalone setup target)
+# -------------------------------
+FROM python-base AS model-downloader
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+RUN --mount=type=cache,id=vtb-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=vtb-apt-lib,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN --mount=type=cache,id=vtb-pip-cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install aiohttp tqdm
+
+RUN find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.11 -type f -name "*.pyc" -delete && \
+    rm -rf /tmp/*
+
+COPY scripts/download_models.py scripts/download_models.py
+
+RUN mkdir -p models/stt models/tts/svara
+
+# -------------------------------
 # C++ engine builds
 # -------------------------------
 FROM build-base AS cpp-build
@@ -246,7 +298,7 @@ WORKDIR /app
 
 COPY app/ ./app/
 
-RUN --mount=type=cache,target=/root/.cache/ccache \
+RUN --mount=type=cache,id=vtb-ccache,target=/root/.cache/ccache \
     cmake -S /app/app/pipeline/translate -B /app/app/pipeline/translate/build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -256,7 +308,9 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER_LAUNCHER=ccache \
     -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
-    cmake --build /app/app/pipeline/tts/build --target tts_engine -j"$(nproc)"
+    cmake --build /app/app/pipeline/tts/build --target tts_engine -j"$(nproc)" && \
+    strip --strip-unneeded /app/app/pipeline/translate/translate_engine 2>/dev/null || true && \
+    strip --strip-unneeded /app/app/pipeline/tts/tts_engine 2>/dev/null || true
 
 # -------------------------------
 # Go websocket server build
@@ -264,23 +318,19 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
 FROM golang:1.22-bookworm AS go-build
 WORKDIR /go-src
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,id=vtb-go-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=vtb-go-apt-lib,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,id=vtb-go-mod,target=/go/pkg/mod \
+    --mount=type=cache,id=vtb-go-build,target=/root/.cache/go-build \
     go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2 && \
     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
 
 COPY go_server/ ./go_server/
-COPY app/config/ ./app/config/
-COPY app/messaging/ ./app/messaging/
-COPY app/rooms/ ./app/rooms/
-COPY app/utils/ ./app/utils/
-COPY app/workers/ ./app/workers/
+COPY app/config/ app/messaging/ app/rooms/ app/utils/ app/workers/ ./app/
 COPY proto/ ./proto/
 
 WORKDIR /go-src/go_server
@@ -295,14 +345,15 @@ RUN mkdir -p /go-src/go_server/proto && \
     --go-grpc_opt=paths=source_relative \
     voice_translator.proto
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,id=vtb-go-mod,target=/go/pkg/mod \
+    --mount=type=cache,id=vtb-go-build,target=/root/.cache/go-build \
     go mod tidy && \
     go mod download
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/voice-translator-go-server ./main.go
+RUN --mount=type=cache,id=vtb-go-mod,target=/go/pkg/mod \
+    --mount=type=cache,id=vtb-go-build,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags="-s -w" -o /out/voice-translator-go-server ./main.go
 
 # -------------------------------
 # Final production image
@@ -311,11 +362,6 @@ FROM runtime-base AS production
 WORKDIR /app
 
 COPY --from=python-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=python-deps /usr/local/bin /usr/local/bin
-
-COPY docs/ ./docs/
-COPY scripts/ ./scripts/
-COPY app/ ./app/
 
 # Copy only llama runtime binaries/scripts required at runtime
 RUN mkdir -p /app/llama.cpp/bin
@@ -324,26 +370,34 @@ COPY --from=llama-build /work/llama-runtime/bin/ /app/llama.cpp/bin/
 # Copy prebuilt model artifacts only
 COPY --from=model-build /work/llm-models/ /app/llm-models/
 
-# Copy compiled C++ daemons only
-COPY --from=cpp-build /app/app/pipeline/translate/translate_engine /app/app/pipeline/translate/translate_engine
-COPY --from=cpp-build /app/app/pipeline/tts/tts_engine /app/app/pipeline/tts/tts_engine
-COPY --from=go-build /out/voice-translator-go-server /app/go_server/voice-translator-go-server
+# Copy python runtime app package; then remove Go-only subtrees/artifacts
+COPY app/ /app/app/
+RUN rm -rf /app/app/rooms /app/app/messaging /app/app/workers /app/app/utils && \
+    find /app/app -type f -name "*.go" -delete && \
+    find /app/app -type f -name "go.mod" -delete
+
+# Copy compiled daemons and server binaries only
+RUN mkdir -p /app/bin
+COPY --from=cpp-build /app/app/pipeline/translate/translate_engine /app/bin/translate_engine
+COPY --from=cpp-build /app/app/pipeline/tts/tts_engine /app/bin/tts_engine
+COPY --from=go-build /out/voice-translator-go-server /app/bin/voice-translator-go-server
 
 RUN mkdir -p logs data models /tmp /app/.local && \
     groupadd -r appuser && \
     useradd -r -g appuser -u 1000 appuser && \
     chmod -R 755 /usr/local/lib/python3.11/site-packages && \
+    find /app -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app -type f -name "*.pyc" -delete && \
     chown -R appuser:appuser /app /tmp
 
 ENV HOST=0.0.0.0 \
     PORT=7860 \
-    WORKERS=1 \
     LOG_LEVEL=INFO \
     ENVIRONMENT=production \
     DEBUG=False \
     TRANSLATION_ENGINE=sarvam \
     SARVAM_MODEL_PATH=/app/llm-models/sarvam-1-q4.gguf \
-    SARVAM_CPP_BINARY_PATH=/app/app/pipeline/translate/translate_engine \
+    SARVAM_CPP_BINARY_PATH=/app/bin/translate_engine \
     SARVAM_DAEMON_WORKERS=2 \
     SARVAM_DAEMON_QUEUE_SIZE=256 \
     SARVAM_MAX_INPUT_CHARS=4000 \
@@ -356,13 +410,9 @@ ENV HOST=0.0.0.0 \
     LLAMA_CPP_PATH=/app/llama.cpp \
     LLAMA_CLI_PATH=/app/llama.cpp/bin/llama-cli \
     TTS_ENGINE=svara \
-    SVARA_TTS_CPP_BINARY_PATH=/app/app/pipeline/tts/tts_engine \
+    SVARA_TTS_CPP_BINARY_PATH=/app/bin/tts_engine \
     SVARA_TTS_MODEL_ID=/app/llm-models/svara-tts-v1.Q5_K_M.gguf \
-    SVARA_TTS_ONNX_MODEL_PATH= \
     SVARA_TTS_TOKENIZER_ID=kenpath/svara-tts-v1 \
-    TTS_DAEMON_WORKERS=2 \
-    SVARA_TTS_API_BASE_URL= \
-    SVARA_TTS_API_KEY= \
     SVARA_TTS_TIMEOUT_SECONDS=90 \
     SVARA_TTS_MAX_INPUT_CHARS=600 \
     SVARA_TTS_DEFAULT_VOICE=anushka \
@@ -371,13 +421,10 @@ ENV HOST=0.0.0.0 \
     SVARA_TTS_THREADS=2 \
     SVARA_TTS_CONTEXT_SIZE=1024 \
     SVARA_TTS_PIN_WORKERS=false \
-    GO_SERVER_BINARY_PATH=/app/go_server/voice-translator-go-server \
     GRPC_PORT=50051 \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
     XDG_CACHE_HOME=/tmp \
-    HOME=/app \
-    PIP_NO_INPUT=1 \
-    PIP_USER=0
+    HOME=/app
 
 USER appuser
 
@@ -386,4 +433,4 @@ EXPOSE 7860 50051
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:7860/health || exit 1
 
-CMD ["/app/go_server/voice-translator-go-server"]
+CMD ["/app/bin/voice-translator-go-server"]
