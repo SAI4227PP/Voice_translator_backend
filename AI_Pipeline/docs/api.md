@@ -24,7 +24,7 @@ Service metadata.
 Example response:
 ```json
 {
-  "service": "Voice-to-Voice Translator",
+  "service": "AI_Pipeline",
   "version": "1.0.0",
   "status": "running"
 }

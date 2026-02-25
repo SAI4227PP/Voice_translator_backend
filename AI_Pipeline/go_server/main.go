@@ -199,7 +199,7 @@ func (a *appState) rootHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"service": "Voice-to-Voice Translator",
+		"service": "AI_Pipeline",
 		"version": "1.0.0",
 		"status":  "running",
 	})

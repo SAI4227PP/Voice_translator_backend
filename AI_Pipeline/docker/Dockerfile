@@ -412,7 +412,7 @@ ENV HOST=0.0.0.0 \
     TRANSLATION_CIRCUIT_BREAKER_THRESHOLD=5 \
     TRANSLATION_CIRCUIT_BREAKER_RESET_SECONDS=30 \
     LLAMA_CPP_PATH=/app/llama.cpp \
-    LLAMA_CLI_PATH=/app/llama.cpp/bin/llama-cli \
+    LLAMA_CLI_PATH=- \
     TTS_ENGINE=svara \
     SVARA_TTS_CPP_BINARY_PATH=/app/bin/tts_engine \
     SVARA_TTS_MODEL_ID=/app/llm-models/svara-tts-v1.Q5_K_M.gguf \
@@ -438,3 +438,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:7860/health || exit 1
 
 CMD ["/app/bin/voice-translator-go-server"]
+

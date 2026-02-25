@@ -239,8 +239,12 @@ func (t *SarvamTranslator) readLoop() {
 func (t *SarvamTranslator) failPending(err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	msg := err.Error()
+	if tail := t.stderrTailLocked(); tail != "" {
+		msg = fmt.Sprintf("%s (stderr_tail=%s)", msg, tail)
+	}
 	for id, ch := range t.pending {
-		ch <- map[string]any{"id": id, "status": "error", "error": err.Error()}
+		ch <- map[string]any{"id": id, "status": "error", "error": msg}
 	}
 	t.pending = map[string]chan map[string]any{}
 }
