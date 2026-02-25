@@ -1076,7 +1076,9 @@ private:
             payload.append(std::to_string(n_predict));
             payload.append(",\"temperature\":");
             payload.append(strict_mode ? "0.0" : "0.01");
-            payload.append(",\"top_p\":0.9,\"repeat_penalty\":1.1,\"cache_prompt\":true,\"stream\":true,\"id_slot\":");
+            payload.append(",\"top_p\":0.9,\"repeat_penalty\":1.1,\"cache_prompt\":true,\"stream\":true");
+            payload.append(",\"stop\":[\"\\nInput:\",\"\\nOutput:\",\"</s>\"]");
+            payload.append(",\"id_slot\":");
             payload.append(std::to_string(slot));
             payload.push_back('}');
 

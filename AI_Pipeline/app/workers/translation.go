@@ -153,6 +153,16 @@ func sanitizeTranslatedText(v string) string {
 			s = strings.TrimSpace(strings.TrimPrefix(s, p))
 		}
 	}
+	// Remove obvious prompt leakage and label tails.
+	for _, marker := range []string{"\nInput:", "\nOutput:", "\nTranslation:", " Input:", " Output:"} {
+		if idx := strings.Index(s, marker); idx >= 0 {
+			s = strings.TrimSpace(s[:idx])
+		}
+	}
+	if idx := strings.Index(s, "(Translation)"); idx >= 0 {
+		s = strings.TrimSpace(s[:idx])
+	}
+	s = strings.Trim(s, "\"' ")
 	return s
 }
 
