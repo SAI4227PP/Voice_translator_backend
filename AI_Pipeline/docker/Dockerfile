@@ -330,7 +330,7 @@ RUN --mount=type=cache,id=vtb-go-mod,target=/go/pkg/mod \
     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
 
 COPY go_server/ ./go_server/
-COPY app/config/ app/messaging/ app/rooms/ app/utils/ app/workers/ ./app/
+COPY app/config app/messaging app/rooms app/utils app/workers ./app/
 COPY proto/ ./proto/
 
 WORKDIR /go-src/go_server
