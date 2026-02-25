@@ -246,7 +246,7 @@ func (t *SarvamTranslator) stderrLoop(r io.Reader) {
 		n, err := r.Read(buf)
 		if n > 0 {
 			chunk := strings.TrimSpace(string(buf[:n]))
-			if chunk != "" {
+			if chunk != "" && !isDotProgressChunk(chunk) {
 				log.Printf("translation_daemon_stderr chunk=%s", chunk)
 			}
 			t.mu.Lock()
@@ -262,6 +262,15 @@ func (t *SarvamTranslator) stderrLoop(r io.Reader) {
 			return
 		}
 	}
+}
+
+func isDotProgressChunk(v string) bool {
+	for _, r := range v {
+		if r != '.' {
+			return false
+		}
+	}
+	return v != ""
 }
 
 func (t *SarvamTranslator) readLoop() {

@@ -323,6 +323,43 @@ bool wait_for_port_ready(int port, int timeout_ms, pid_t server_pid) {
     return false;
 }
 
+bool wait_for_http_ready(int port, int timeout_ms) {
+    const std::string url = "http://127.0.0.1:" + std::to_string(port) + "/health";
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+
+    while (std::chrono::steady_clock::now() < deadline) {
+        CURL* curl = curl_easy_init();
+        if (!curl) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+
+        std::string body;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 500L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1000L);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, +[](char* ptr, size_t size, size_t nmemb, void* userdata) -> size_t {
+            auto* out = static_cast<std::string*>(userdata);
+            out->append(ptr, size * nmemb);
+            return size * nmemb;
+        });
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+
+        const CURLcode rc = curl_easy_perform(curl);
+        long http_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        curl_easy_cleanup(curl);
+
+        if (rc == CURLE_OK && http_code >= 200 && http_code < 300) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return false;
+}
+
 std::string strip_trailing_newlines(const std::string& input) {
     std::size_t end = input.size();
     while (end > 0 && (input[end - 1] == '\n' || input[end - 1] == '\r')) {
@@ -1188,7 +1225,10 @@ private:
         }
 
         llama_server_pid_ = pid;
-        return wait_for_port_ready(cfg_.server_port, 30000, llama_server_pid_);
+        if (!wait_for_port_ready(cfg_.server_port, 30000, llama_server_pid_)) {
+            return false;
+        }
+        return wait_for_http_ready(cfg_.server_port, 30000);
     }
 
     void stop_llama_server() {
