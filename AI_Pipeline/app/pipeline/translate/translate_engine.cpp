@@ -377,6 +377,12 @@ std::string build_prompt(const std::string& text, const std::string& source_lang
     return prompt;
 }
 
+std::string build_prompt_strict(const std::string& text, const std::string& source_lang, const std::string& target_lang) {
+    std::string prompt = build_prompt(text, source_lang, target_lang);
+    prompt += "\nRules: Do not copy source text. Do not respond in English unless target is en. Output only final translation.";
+    return prompt;
+}
+
 int adaptive_max_tokens(const std::string& text, int max_tokens) {
     const std::size_t n = text.size();
     if (n <= 32) {
@@ -430,6 +436,46 @@ std::string truncate_text(const std::string& text, int max_chars) {
         return text;
     }
     return text.substr(0, static_cast<std::size_t>(max_chars));
+}
+
+std::string normalize_compare_text(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (unsigned char c : text) {
+        if (std::isalnum(c)) {
+            out.push_back(static_cast<char>(std::tolower(c)));
+        }
+    }
+    return out;
+}
+
+bool should_expect_non_ascii_target(const std::string& target) {
+    return target != "en";
+}
+
+bool looks_like_untranslated_output(const std::string& source, const std::string& translated, const std::string& target) {
+    const std::string src_norm = normalize_compare_text(source);
+    const std::string out_norm = normalize_compare_text(translated);
+    if (!src_norm.empty() && src_norm == out_norm) {
+        return true;
+    }
+
+    if (!should_expect_non_ascii_target(target)) {
+        return false;
+    }
+
+    int ascii_letters = 0;
+    int non_ascii_bytes = 0;
+    for (unsigned char c : translated) {
+        if (c < 0x80) {
+            if (std::isalpha(c)) {
+                ++ascii_letters;
+            }
+        } else {
+            ++non_ascii_bytes;
+        }
+    }
+    return non_ascii_bytes == 0 && ascii_letters >= 4;
 }
 
 int slot_for_pair(const std::string& source, const std::string& target) {
@@ -997,32 +1043,48 @@ private:
         const std::string limited = truncate_text(text, cfg_.max_input_chars);
         const std::string compact = strip_trailing_newlines(limited);
         const int n_predict = adaptive_max_tokens(compact, cfg_.max_tokens);
-        const std::string prompt = build_prompt(compact, source, target);
         const int slot = slot_for_pair(source, target);
+        auto run_once = [&](bool strict_mode) -> std::pair<std::string, std::string> {
+            const std::string prompt = strict_mode
+                ? build_prompt_strict(compact, source, target)
+                : build_prompt(compact, source, target);
+            const std::string escaped_prompt = json_escape(prompt);
+            thread_local std::string payload;
+            payload.clear();
+            payload.reserve(640 + prompt.size());
+            payload.append("{\"prompt\":\"");
+            payload.append(escaped_prompt);
+            payload.append("\",\"n_predict\":");
+            payload.append(std::to_string(n_predict));
+            payload.append(",\"temperature\":");
+            payload.append(strict_mode ? "0.0" : "0.01");
+            payload.append(",\"top_p\":0.9,\"repeat_penalty\":1.1,\"cache_prompt\":true,\"stream\":true,\"id_slot\":");
+            payload.append(std::to_string(slot));
+            payload.append(",\"stop\":[\"\\n\"]}");
 
-        const std::string escaped_prompt = json_escape(prompt);
-        thread_local std::string payload;
-        payload.clear();
-        payload.reserve(512 + prompt.size());
-        payload.append("{\"prompt\":\"");
-        payload.append(escaped_prompt);
-        payload.append("\",\"n_predict\":");
-        payload.append(std::to_string(n_predict));
-        payload.append(",\"temperature\":0.01,\"top_p\":0.9,\"repeat_penalty\":1.1,\"cache_prompt\":true,\"stream\":true,\"id_slot\":");
-        payload.append(std::to_string(slot));
-        payload.push_back('}');
+            const std::string url = "http://127.0.0.1:" + std::to_string(cfg_.server_port) + "/completion";
+            auto [out, err] = http_post_json_streaming(url, payload, 120L);
+            if (!err.empty()) {
+                return {"", err};
+            }
+            std::string content = trim(out);
+            if (content.empty()) {
+                return {"", "empty_translation_output"};
+            }
+            return {content, ""};
+        };
 
-        const std::string url = "http://127.0.0.1:" + std::to_string(cfg_.server_port) + "/completion";
-        auto [out, err] = http_post_json_streaming(url, payload, 120L);
-        if (!err.empty()) {
-            return {"", err};
+        auto result = run_once(false);
+        if (!result.second.empty()) {
+            return result;
         }
-
-        std::string content = trim(out);
-        if (content.empty()) {
-            return {"", "empty_translation_output"};
+        if (looks_like_untranslated_output(compact, result.first, target)) {
+            auto strict_result = run_once(true);
+            if (strict_result.second.empty()) {
+                return strict_result;
+            }
         }
-        return {content, ""};
+        return result;
     }
 
     void process_request(const Request& req) {

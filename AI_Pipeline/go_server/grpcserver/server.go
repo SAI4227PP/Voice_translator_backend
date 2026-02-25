@@ -168,16 +168,31 @@ func (s *Service) Translate(_ context.Context, req *pb.TranslationRequest) (*pb.
 	if err := s.validateTranslationRequest(req); err != nil {
 		return nil, err
 	}
+
+	source := strings.TrimSpace(req.GetSourceLang())
+	target := strings.TrimSpace(req.GetTargetLang())
+	if strings.EqualFold(source, target) {
+		return &pb.TranslationResponse{
+			OriginalText:     req.GetText(),
+			TranslatedText:   req.GetText(),
+			SourceLang:       source,
+			TargetLang:       target,
+			Confidence:       1,
+			ProcessingTimeMs: 0,
+			TaskId:           req.GetTaskId(),
+		}, nil
+	}
+
 	start := time.Now()
-	translated, err := s.deps.Translator.Translate(req.GetText(), req.GetSourceLang(), req.GetTargetLang())
+	translated, err := s.deps.Translator.Translate(req.GetText(), source, target)
 	if err != nil {
 		return nil, mapWorkerError(err)
 	}
 	return &pb.TranslationResponse{
 		OriginalText:     req.GetText(),
 		TranslatedText:   translated,
-		SourceLang:       req.GetSourceLang(),
-		TargetLang:       req.GetTargetLang(),
+		SourceLang:       source,
+		TargetLang:       target,
 		Confidence:       0,
 		ProcessingTimeMs: time.Since(start).Milliseconds(),
 		TaskId:           req.GetTaskId(),
