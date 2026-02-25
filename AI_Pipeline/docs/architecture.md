@@ -2,285 +2,253 @@
 
 ## Overview
 
-The Voice-to-Voice Translator is a real-time translation system designed for low-latency voice communication across language barriers. The architecture emphasizes modularity, scalability, and performance.
+Voice-to-Voice Translator is a low-latency, real-time backend built on:
+
+- Go API server (HTTP + WebSocket + optional gRPC)
+- Python STT bridge (Vosk)
+- C++ translation and TTS daemons (Sarvam + Svara)
+
+Design goals:
+
+- clear runtime boundaries
+- predictable latency for streaming
+- modular scaling path from integrated runtime to microservices
+
+## Architecture Comparison
+
+### Current (Integrated Runtime)
+```text
++------------------------------------------------------+
+| voice-translator-app                                 |
+|                                                      |
+|  +-----------------------------------------------+   |
+|  | Go Server                                      |   |
+|  | - HTTP handlers                                |   |
+|  | - WebSocket + room routing                     |   |
+|  | - Optional gRPC services                       |   |
+|  +----------------------+------------------------+   |
+|                         |                            |
+|  +----------------------v------------------------+   |
+|  | Shared Workers                                 |   |
+|  | - STT bridge (Python Vosk)                     |   |
+|  | - Translation worker (Sarvam daemon)           |   |
+|  | - TTS worker (Svara daemon)                    |   |
+|  +-----------------------------------------------+   |
++------------------------------------------------------+
+```
+
+### Target (Service-Split)
+```text
++-------------------+        +----------------------+
+| Gateway Service   | gRPC   | STT Service          |
+| (HTTP/WS ingress) +------->| (Python Vosk bridge) |
++---------+---------+        +----------------------+
+          |
+          | gRPC
+          v
++----------------------+      +----------------------+
+| Translation Service  +----->| TTS Service          |
+| (Sarvam daemon)      | gRPC | (Svara daemon)       |
++----------------------+      +----------------------+
+```
 
 ## High-Level Architecture
 
+```mermaid
+flowchart LR
+    C[Client Apps<br/>Web / Mobile / SDK]
+
+    subgraph GO[Go Server Layer]
+        A[API Server<br/>go_server/main.go]
+        W[WebSocket + Rooms<br/>server/* + app/rooms/*]
+        G[gRPC Services<br/>go_server/grpcserver/server.go]
+    end
+
+    subgraph WORKERS[Worker Layer]
+        STT[Python STT Bridge<br/>app/workers/stt.go]
+        TR[Translation Worker<br/>app/workers/translation.go]
+        TT[TTS Worker<br/>app/workers/tts.go]
+    end
+
+    subgraph RUNTIMES[Inference Runtime Layer]
+        PY[Python Runtime<br/>Vosk STT]
+        CPP1[translate_engine<br/>C++ daemon]
+        CPP2[tts_engine<br/>C++ daemon]
+    end
+
+    C <-. WS / HTTP / gRPC .-> A
+    A -. route .-> W
+    A -. route .-> G
+
+    W -. pipeline .-> STT
+    STT -. pipeline .-> TR
+    TR -. pipeline .-> TT
+
+    G -. RPC call .-> STT
+    G -. RPC call .-> TR
+    G -. RPC call .-> TT
+
+    STT -. bridge .-> PY
+    TR -. stdio JSON IPC .-> CPP1
+    TT -. stdio JSON IPC .-> CPP2
 ```
-┌─────────────┐         WebSocket          ┌──────────────────┐
-│   Client    │◄──────────────────────────►│  WebSocket       │
-│   (Web/App) │      Audio Streaming       │  Server          │
-└─────────────┘                             └────────┬─────────┘
-                                                     │
-                                            ┌────────▼─────────┐
-                                            │  Connection      │
-                                            │  Manager         │
-                                            └────────┬─────────┘
-                                                     │
-                                            ┌────────▼─────────┐
-                                            │  Room            │
-                                            │  Manager         │
-                                            └────────┬─────────┘
-                                                     │
-                                      ┌──────────────┼──────────────┐
-                                      │              │              │
-                                ┌─────▼─────┐  ┌────▼────┐  ┌─────▼─────┐
-                                │    STT    │  │ Translate│  │    TTS    │
-                                │  Engine   │  │  Engine  │  │  Engine   │
-                                └───────────┘  └──────────┘  └───────────┘
-                                      │              │              │
-                                      └──────────────┼──────────────┘
-                                                     │
-                                            ┌────────▼─────────┐
-                                            │  Pipeline        │
-                                            │  Manager         │
-                                            └──────────────────┘
+
+Legend:
+
+- Dotted lines (`-.->`) represent routing/invocation boundaries.
+
+## Request Flows
+
+### Real-Time WS Flow
+```text
+audio chunk -> ws handler -> room router -> STT -> Translation -> TTS -> audio out -> room recipients
+```
+
+### gRPC Flow
+```text
+STT/Translation/TTS RPC -> request validation -> worker call -> runtime engine -> RPC response
 ```
 
 ## Core Components
 
-### 1. WebSocket Server Layer
+### 1. Go Server Layer
 
-**Purpose**: Handle real-time bidirectional communication with clients
+Purpose:
 
-**Components**:
-- **websocket_server.py**: Main WebSocket endpoint handler
-- **connection_manager.py**: Manages active connections and routing
-- **heartbeat.py**: Connection health monitoring
+- entrypoint and orchestration layer
 
-**Key Features**:
-- Async/await architecture using FastAPI/Uvicorn
-- Automatic reconnection handling
-- Message queue for reliable delivery
-- Connection state management
+Key files:
 
-### 2. Room Management Layer
+- `AI_Pipeline/go_server/main.go`
+- `AI_Pipeline/go_server/server/websocket_server.go`
+- `AI_Pipeline/go_server/grpcserver/server.go`
 
-**Purpose**: Organize users into translation sessions
+Responsibilities:
 
-**Components**:
-- **room_manager.py**: Central room orchestration
-- **room.py**: Individual room logic and state
+- HTTP/WS/gRPC routing
+- request validation and response shaping
+- warm-start and lifecycle of workers
 
-**Key Features**:
-- Multi-user support per room
-- Language pair management
-- Audio stream routing
-- Session persistence
+### 2. WebSocket + Room Layer
 
-### 3. Processing Pipeline Layer
+Purpose:
 
-**Purpose**: Execute the translation pipeline
+- real-time session routing between users/rooms
 
-**Components**:
+Key files:
 
-#### Speech-to-Text (STT)
-- **vosk_engine.py**: Vosk model integration
-- **stt_factory.py**: STT engine abstraction
+- `AI_Pipeline/go_server/server/connection_manager.go`
+- `AI_Pipeline/go_server/server/heartbeat.go`
+- `AI_Pipeline/app/rooms/manager.go`
+- `AI_Pipeline/app/rooms/room.go`
+- `AI_Pipeline/app/messaging/router.go`
 
-#### Translation
-- **argos_engine.py**: Argos Translate integration
-- **translator.py**: Translation orchestration
+Responsibilities:
 
-#### Text-to-Speech (TTS)
-- **coqui_engine.py**: Coqui TTS integration
-- **tts_factory.py**: TTS engine abstraction
+- connection tracking and keepalive
+- room membership and dispatch
+- translation event routing
 
-**Pipeline Flow**:
-```
-Audio Chunk → STT → Text → Translation → Translated Text → TTS → Audio Chunk
-```
+### 3. Worker Layer
 
-### 4. Audio Processing Layer
+Purpose:
 
-**Purpose**: Handle audio buffer management and validation
+- isolate model runtime calls from transport/API code
 
-**Components**:
-- **audio_buffer.py**: Buffering and chunking
-- **audio_utils.py**: Audio format conversions
-- **pcm_validator.py**: Audio quality validation
+Key files:
 
-### 5. Messaging Layer
+- `AI_Pipeline/app/workers/stt.go`
+- `AI_Pipeline/app/workers/translation.go`
+- `AI_Pipeline/app/workers/tts.go`
 
-**Purpose**: Define and route WebSocket messages
+Responsibilities:
 
-**Components**:
-- **protocol.py**: Message schema definitions
-- **message_router.py**: Message dispatch logic
+- STT bridge process execution
+- translation daemon lifecycle + resilience controls
+- TTS daemon lifecycle + response decoding
 
-### 6. Security Layer
+### 4. Inference Runtime Layer
 
-**Purpose**: Authentication and rate limiting
+STT runtime:
 
-**Components**:
-- **auth.py**: JWT authentication (optional)
-- **rate_limiter.py**: Request throttling
+- Python Vosk through `PythonSTTBridge`
 
-### 7. Worker Layer
+Translation runtime:
 
-**Purpose**: Background task processing
+- `AI_Pipeline/app/pipeline/translate/translate_engine.cpp`
+- JSON command protocol over stdio
 
-**Components**:
-- **translation_worker.py**: Async translation processing
-- **tts_worker.py**: Async TTS generation
+TTS runtime:
 
-## Data Flow
+- `AI_Pipeline/app/pipeline/tts/tts_engine.cpp`
+- WAV output from daemon/API backend path
 
-### Incoming Audio Stream
+### 5. Protocol Layer
 
-```
-1. Client sends audio chunk (WebSocket binary)
-2. Connection Manager receives and validates
-3. Audio Buffer accumulates chunks
-4. When sufficient data: Pipeline triggered
-5. STT processes audio → text
-6. Translation engine translates text
-7. TTS generates audio from translated text
-8. Audio routed to target user(s) in room
-9. WebSocket sends audio chunk to client(s)
-```
+Purpose:
 
-### Connection Lifecycle
+- strongly typed contract for service boundaries
 
-```
-1. Client connects to WebSocket endpoint
-2. Authentication (if enabled)
-3. Client sends JOIN_ROOM message
-4. Room Manager assigns to room
-5. Connection Manager tracks connection
-6. Heartbeat begins
-7. Audio streaming active
-8. On disconnect: cleanup and notify room
-```
+Key files:
 
-## Technology Stack
+- `AI_Pipeline/proto/voice_translator.proto`
+- `AI_Pipeline/go_server/proto/gen.go`
+- `AI_Pipeline/scripts/gen_go_proto.ps1`
+- `AI_Pipeline/scripts/gen_go_proto.sh`
 
-### Core Framework
-- **FastAPI**: Modern async web framework
-- **Uvicorn**: ASGI server
-- **WebSockets**: Real-time communication
+Note:
 
-### ML Models
-- **Vosk**: Offline speech recognition
-- **Argos Translate**: Offline translation
-- **Coqui TTS**: Neural text-to-speech
+- local Go build requires generated proto files in `AI_Pipeline/go_server/proto/`.
 
-### Audio Processing
-- **NumPy**: Numerical processing
-- **SoundFile**: Audio I/O
+## Data and Control Boundaries
 
-### Utilities
-- **Pydantic**: Data validation
-- **Structlog**: Structured logging
-- **asyncio**: Async operations
+- Go process: API + routing + orchestration
+- Python process: STT execution
+- C++ processes: Translation and TTS daemons
+- IPC: newline-delimited JSON over stdio (worker <-> daemon)
 
-## Scalability Considerations
+## Deployment Model
 
-### Horizontal Scaling
-- Stateless server design
-- Redis for shared state (optional)
-- Load balancer for multiple instances
+### Docker (recommended)
 
-### Vertical Scaling
-- Multi-threading for CPU-bound tasks
-- GPU acceleration for models
-- Memory-mapped model loading
+- multi-stage build compiles C++ binaries and Go server
+- runtime container launches Go binary
+- gRPC toggled via env flags
 
-### Performance Optimization
-- Model warm-up on startup
-- Connection pooling
-- Audio chunk batching
-- Worker pool for parallel processing
+Relevant files:
 
-## Deployment Architectures
+- `AI_Pipeline/docker/Dockerfile`
+- `AI_Pipeline/docker/docker-compose.yml`
 
-### Single Server
-```
-┌──────────────────────────┐
-│   Application Server     │
-│  - WebSocket Handler     │
-│  - All ML Models         │
-│  - Room Manager          │
-└──────────────────────────┘
-```
+## Configuration Surface
 
-### Microservices
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   Gateway    │────►│  STT Service │────►│ Translation  │
-│   Server     │     │              │     │   Service    │
-└──────────────┘     └──────────────┘     └──────┬───────┘
-                                                  │
-                                           ┌──────▼───────┐
-                                           │ TTS Service  │
-                                           └──────────────┘
-```
+Primary settings file:
 
-## Security Architecture
+- `AI_Pipeline/app/config/settings.go`
 
-### Authentication Flow
-```
-1. Client requests token (username/password)
-2. Server validates credentials
-3. JWT token issued
-4. Token included in WebSocket connection
-5. Token validated on each message
-```
+Important runtime knobs:
 
-### Rate Limiting
-- Per-connection limits
-- Per-IP limits
-- Adaptive throttling
+- `HOST`, `PORT`
+- `GRPC_ENABLED`, `GRPC_PORT`
+- `STT_ENABLE_WARM_START`, `STT_PRELOAD_LANGUAGES`
+- `TRANSLATION_ENABLE_WARM_START`, `TRANSLATION_COMMON_PAIRS`
+- `TTS_ENABLE_WARM_START`, `TTS_PRELOAD_LANGUAGES`
+- `SVARA_TTS_ONNX_MODEL_PATH`, `SVARA_TTS_ONNX_SAMPLE_RATE`
 
-## Monitoring and Observability
+## Scalability Notes
 
-### Metrics
-- Connection count
-- Message throughput
-- Pipeline latency
-- Error rates
-- Model inference time
+- Horizontal: multiple Go instances behind load balancer
+- Vertical: tune daemon workers and queue sizes
+- Latency: keep audio shard sizes in low-latency range for streaming paths
 
-### Logging
-- Structured JSON logs
-- Request tracing
-- Error tracking
-- Performance profiling
+## Reliability Notes
 
-## Failure Handling
-
-### Network Failures
-- Automatic reconnection
-- Message queue persistence
-- Graceful degradation
-
-### Model Failures
-- Fallback models
-- Error reporting
-- Partial results
-
-### Resource Exhaustion
-- Connection limits
-- Memory management
-- Queue bounds
+- Translation worker has timeout/retry/circuit-breaker behavior
+- gRPC health probes runtime worker paths
+- Queue and connection limits prevent uncontrolled resource growth
 
 ## Extension Points
 
-### Adding New Languages
-1. Download Vosk model for language
-2. Download Argos translation package
-3. Download/train TTS model
-4. Update configuration
-5. Restart server
-
-### Custom STT/TTS Engines
-1. Implement engine interface
-2. Add to factory
-3. Configure via settings
-4. No code changes needed elsewhere
-
-### Plugin Architecture
-- Message middleware
-- Custom audio processors
-- Analytics hooks
-- Storage backends
+- add languages by extending scanner/runtime model support
+- replace runtime engines by preserving worker contracts
+- evolve gRPC/WS contracts through proto + router changes

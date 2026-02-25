@@ -1,1054 +1,327 @@
-{
-	"info": {
-		"_postman_id": "voice-translator-api-collection",
-		"name": "Voice-to-Voice Translator API",
-		"description": "Complete REST API collection for Voice-to-Voice Translator service with real-time audio translation capabilities.",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-		"version": "1.0.0"
-	},
-	"auth": {
-		"type": "bearer",
-		"bearer": [
-			{
-				"key": "token",
-				"value": "{{auth_token}}",
-				"type": "string"
-			}
-		]
-	},
-	"variable": [
-		{
-			"key": "base_url",
-			"value": "https://mohansai2004-voice-backend.hf.space",
-			"type": "string"
-		},
-		{
-			"key": "auth_token",
-			"value": "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",
-			"type": "string"
-		},
-		{
-			"key": "api_key",
-			"value": "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",
-			"type": "string"
-		},
-		{
-			"key": "room_id",
-			"value": "room123",
-			"type": "string"
-		},
-		{
-			"key": "user_id",
-			"value": "user123",
-			"type": "string"
-		}
-	],
-	"item": [
-		{
-			"name": "Health & Status",
-			"item": [
-				{
-					"name": "Health Check",
-					"request": {
-						"auth": {
-							"type": "noauth"
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/health",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"health"
-							]
-						},
-						"description": "Get server health status including uptime, connections, and rooms."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "GET",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/health",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"health"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"status\": \"healthy\",\n  \"version\": \"1.0.0\",\n  \"uptime\": 3600,\n  \"connections\": 15,\n  \"rooms\": 3,\n  \"timestamp\": \"2025-12-17T10:30:00Z\"\n}"
-						}
-					]
-				},
-				{
-					"name": "Get Server Statistics",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/stats",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"stats"
-							]
-						},
-						"description": "Get detailed server statistics and metrics including connections, rooms, workers, and processing stats."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "GET",
-								"header": [
-									{
-										"key": "Authorization",
-										"value": "Bearer {{auth_token}}"
-									}
-								],
-								"url": {
-									"raw": "{{base_url}}/stats",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"stats"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"server\": {\n    \"uptime\": 86400,\n    \"version\": \"1.0.0\",\n    \"environment\": \"production\"\n  },\n  \"connections\": {\n    \"total\": 150,\n    \"active\": 142,\n    \"idle\": 8\n  },\n  \"rooms\": {\n    \"total\": 25,\n    \"active\": 20,\n    \"empty\": 5\n  },\n  \"workers\": {\n    \"translation\": {\n      \"total\": 4,\n      \"busy\": 2,\n      \"queue_size\": 5\n    },\n    \"tts\": {\n      \"total\": 2,\n      \"busy\": 1,\n      \"queue_size\": 3\n    }\n  },\n  \"processing\": {\n    \"total_translations\": 5420,\n    \"total_audio_processed_mb\": 2850,\n    \"avg_latency_ms\": 245\n  },\n  \"timestamp\": \"2025-12-17T10:30:00Z\"\n}"
-						}
-					]
-				},
-				{
-					"name": "Get System Configuration",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/config",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"config"
-							]
-						},
-						"description": "Get current system configuration. Requires admin authentication."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "GET",
-								"header": [
-									{
-										"key": "Authorization",
-										"value": "Bearer {{auth_token}}"
-									}
-								],
-								"url": {
-									"raw": "{{base_url}}/config",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"config"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"audio\": {\n    \"sample_rate\": 16000,\n    \"channels\": 1,\n    \"chunk_size\": 4096,\n    \"format\": \"PCM16\"\n  },\n  \"limits\": {\n    \"max_connections\": 100,\n    \"max_connections_per_ip\": 10,\n    \"max_users_per_room\": 10,\n    \"max_message_size\": 10485760\n  },\n  \"rate_limits\": {\n    \"messages_per_second\": 10,\n    \"requests_per_minute\": 100\n  },\n  \"workers\": {\n    \"translation_workers\": 4,\n    \"tts_workers\": 2\n  },\n  \"features\": {\n    \"authentication_enabled\": false,\n    \"rate_limiting_enabled\": true,\n    \"metrics_enabled\": true\n  }\n}"
-						}
-					]
-				}
-			],
-			"description": "Health check and server status endpoints"
-		},
-		{
-			"name": "Authentication",
-			"item": [
-				{
-					"name": "Create Authentication Token",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"if (pm.response.code === 200) {",
-									"    var jsonData = pm.response.json();",
-									"    pm.collectionVariables.set(\"auth_token\", jsonData.access_token);",
-									"    pm.collectionVariables.set(\"user_id\", jsonData.user_id);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"auth": {
-							"type": "noauth"
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "X-API-Key",
-								"value": "{{api_key}}",
-								"type": "text",
-								"disabled": true
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"user_id\": \"user123\",\n  \"name\": \"John Doe\",\n  \"metadata\": {\n    \"email\": \"john@example.com\"\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/auth/token",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"auth",
-								"token"
-							]
-						},
-						"description": "Generate a JWT token for WebSocket authentication. The token is automatically saved to collection variables."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{
-										"key": "Content-Type",
-										"value": "application/json"
-									}
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"user_id\": \"user123\",\n  \"name\": \"John Doe\"\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/auth/token",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"auth",
-										"token"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"token_type\": \"bearer\",\n  \"expires_in\": 3600,\n  \"user_id\": \"user123\"\n}"
-						}
-					]
-				},
-				{
-					"name": "Verify Token",
-					"request": {
-						"auth": {
-							"type": "noauth"
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"token\": \"{{auth_token}}\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/auth/verify",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"auth",
-								"verify"
-							]
-						},
-						"description": "Verify a JWT token's validity."
-					},
-					"response": [
-						{
-							"name": "Valid Token Response",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{
-										"key": "Content-Type",
-										"value": "application/json"
-									}
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\"\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/auth/verify",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"auth",
-										"verify"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"valid\": true,\n  \"user_id\": \"user123\",\n  \"expires_at\": \"2025-12-17T11:30:00Z\"\n}"
-						}
-					]
-				}
-			],
-			"description": "Authentication and token management endpoints"
-		},
-		{
-			"name": "Languages",
-			"item": [
-				{
-					"name": "Get Supported Languages",
-					"request": {
-						"auth": {
-							"type": "noauth"
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/languages/supported",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"languages"
-							]
-						},
-						"description": "Retrieve list of all supported languages with their capabilities (STT, translation, TTS)."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "GET",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/languages/supported",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"languages"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"languages\": [\n    {\n      \"code\": \"en\",\n      \"name\": \"English\",\n      \"stt_available\": true,\n      \"translation_available\": true,\n      \"tts_available\": true\n    },\n    {\n      \"code\": \"es\",\n      \"name\": \"Spanish\",\n      \"stt_available\": true,\n      \"translation_available\": true,\n      \"tts_available\": true\n    },\n    {\n      \"code\": \"fr\",\n      \"name\": \"French\",\n      \"stt_available\": true,\n      \"translation_available\": true,\n      \"tts_available\": true\n    }\n  ],\n  \"total\": 9\n}"
-						}
-					]
-				},
-				{
-					"name": "Get Translation Pairs",
-					"request": {
-						"auth": {
-							"type": "noauth"
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/languages/pairs",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"languages",
-								"pairs"
-							],
-							"query": [
-								{
-									"key": "source",
-									"value": "en",
-									"disabled": true
-								},
-								{
-									"key": "target",
-									"value": "hi",
-									"disabled": true
-								}
-							]
-						},
-						"description": "Get list of available language translation pairs. Can be filtered by source or target language."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "GET",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/languages/pairs",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"languages",
-										"pairs"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"pairs\": [\n    {\n      \"source\": \"en\",\n      \"target\": \"es\",\n      \"available\": true\n    },\n    {\n      \"source\": \"en\",\n      \"target\": \"fr\",\n      \"available\": true\n    },\n    {\n      \"source\": \"es\",\n      \"target\": \"en\",\n      \"available\": true\n    }\n  ],\n  \"total\": 72\n}"
-						}
-					]
-				}
-			],
-			"description": "Language support and translation pair endpoints"
-		},
-		{
-			"name": "Rooms",
-			"item": [
-				{
-					"name": "Create Room",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"if (pm.response.code === 201) {",
-									"    var jsonData = pm.response.json();",
-									"    pm.collectionVariables.set(\"room_id\", jsonData.room_id);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"room_id\": \"meeting-room-123\",\n  \"name\": \"Team Meeting\",\n  \"max_users\": 10,\n  \"languages\": [\"en\", \"es\", \"fr\"],\n  \"settings\": {\n    \"auto_translate\": true,\n    \"record_session\": false\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/rooms",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"rooms"
-							]
-						},
-						"description": "Create a new translation room with custom settings. Room ID is automatically saved to collection variables."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{
-										"key": "Content-Type",
-										"value": "application/json"
-									},
-									{
-										"key": "Authorization",
-										"value": "Bearer {{auth_token}}"
-									}
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"name\": \"Team Meeting\",\n  \"max_users\": 10,\n  \"languages\": [\"en\", \"es\"]\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/rooms",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"rooms"
-									]
-								}
-							},
-							"status": "Created",
-							"code": 201,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"room_id\": \"meeting-room-123\",\n  \"name\": \"Team Meeting\",\n  \"created_at\": \"2025-12-17T10:30:00Z\",\n  \"max_users\": 10,\n  \"current_users\": 0,\n  \"websocket_url\": \"ws://localhost:8000/ws\"\n}"
-						}
-					]
-				},
-				{
-					"name": "Get Room Information",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/rooms/{{room_id}}",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"rooms",
-								"{{room_id}}"
-							]
-						},
-						"description": "Get detailed information about a specific room including connected users."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "GET",
-								"header": [
-									{
-										"key": "Authorization",
-										"value": "Bearer {{auth_token}}"
-									}
-								],
-								"url": {
-									"raw": "{{base_url}}/rooms/meeting-room-123",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"rooms",
-										"meeting-room-123"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"room_id\": \"meeting-room-123\",\n  \"name\": \"Team Meeting\",\n  \"created_at\": \"2025-12-17T10:30:00Z\",\n  \"max_users\": 10,\n  \"current_users\": 3,\n  \"users\": [\n    {\n      \"user_id\": \"user_abc123\",\n      \"name\": \"Alice\",\n      \"language\": \"en\",\n      \"connected_at\": \"2025-12-17T10:31:00Z\"\n    },\n    {\n      \"user_id\": \"user_def456\",\n      \"name\": \"Bob\",\n      \"language\": \"es\",\n      \"connected_at\": \"2025-12-17T10:32:00Z\"\n    }\n  ],\n  \"active\": true\n}"
-						}
-					]
-				},
-				{
-					"name": "List All Rooms",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/rooms?page=1&limit=20",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"rooms"
-							],
-							"query": [
-								{
-									"key": "page",
-									"value": "1"
-								},
-								{
-									"key": "limit",
-									"value": "20"
-								},
-								{
-									"key": "active",
-									"value": "true",
-									"disabled": true
-								}
-							]
-						},
-						"description": "Get paginated list of all active rooms."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "GET",
-								"header": [
-									{
-										"key": "Authorization",
-										"value": "Bearer {{auth_token}}"
-									}
-								],
-								"url": {
-									"raw": "{{base_url}}/rooms?page=1&limit=20",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"rooms"
-									],
-									"query": [
-										{
-											"key": "page",
-											"value": "1"
-										},
-										{
-											"key": "limit",
-											"value": "20"
-										}
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"rooms\": [\n    {\n      \"room_id\": \"meeting-room-123\",\n      \"name\": \"Team Meeting\",\n      \"current_users\": 3,\n      \"max_users\": 10,\n      \"active\": true,\n      \"created_at\": \"2025-12-17T10:30:00Z\"\n    },\n    {\n      \"room_id\": \"conference-456\",\n      \"name\": \"Conference Call\",\n      \"current_users\": 5,\n      \"max_users\": 20,\n      \"active\": true,\n      \"created_at\": \"2025-12-17T09:15:00Z\"\n    }\n  ],\n  \"total\": 15,\n  \"page\": 1,\n  \"limit\": 20,\n  \"pages\": 1\n}"
-						}
-					]
-				},
-				{
-					"name": "Delete Room",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "DELETE",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/rooms/{{room_id}}",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"rooms",
-								"{{room_id}}"
-							]
-						},
-						"description": "Delete a room and disconnect all users. Requires admin authentication."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "DELETE",
-								"header": [
-									{
-										"key": "Authorization",
-										"value": "Bearer {{auth_token}}"
-									}
-								],
-								"url": {
-									"raw": "{{base_url}}/rooms/meeting-room-123",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"rooms",
-										"meeting-room-123"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"success\": true,\n  \"room_id\": \"meeting-room-123\",\n  \"message\": \"Room deleted successfully\",\n  \"disconnected_users\": 3\n}"
-						}
-					]
-				}
-			],
-			"description": "Room management endpoints for creating, listing, and managing translation rooms"
-		},
-		{
-			"name": "Translation",
-			"item": [
-				{
-					"name": "Text Translation",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"text\": \"Hello, how are you?\",\n  \"source_language\": \"en\",\n  \"target_language\": \"es\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/translate",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"translate"
-							]
-						},
-						"description": "Translate text from one language to another without audio processing."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{
-										"key": "Content-Type",
-										"value": "application/json"
-									},
-									{
-										"key": "Authorization",
-										"value": "Bearer {{auth_token}}"
-									}
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"text\": \"Hello, how are you?\",\n  \"source_language\": \"en\",\n  \"target_language\": \"hi\"\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/translate",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"translate"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"original_text\": \"Hello, how are you?\",\n  \"translated_text\": \"Hola, ¿cómo estás?\",\n  \"source_language\": \"en\",\n  \"target_language\": \"hi\",\n  \"processing_time_ms\": 45\n}"
-						}
-					]
-				},
-				{
-					"name": "Batch Translation",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"texts\": [\n    \"Hello, how are you?\",\n    \"What time is it?\",\n    \"Thank you very much\"\n  ],\n  \"source_language\": \"en\",\n  \"target_language\": \"es\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/translate/batch",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"translate",
-								"batch"
-							]
-						},
-						"description": "Translate multiple texts in a single request (maximum 100 texts)."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{
-										"key": "Content-Type",
-										"value": "application/json"
-									},
-									{
-										"key": "Authorization",
-										"value": "Bearer {{auth_token}}"
-									}
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"texts\": [\"Hello\", \"Goodbye\", \"Thank you\"],\n  \"source_language\": \"en\",\n  \"target_language\": \"hi\"\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/translate/batch",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"translate",
-										"batch"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "json",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "application/json"
-								}
-							],
-							"body": "{\n  \"translations\": [\n    {\n      \"original\": \"Hello, how are you?\",\n      \"translated\": \"Hola, ¿cómo estás?\",\n      \"index\": 0\n    },\n    {\n      \"original\": \"What time is it?\",\n      \"translated\": \"¿Qué hora es?\",\n      \"index\": 1\n    },\n    {\n      \"original\": \"Thank you very much\",\n      \"translated\": \"Muchas gracias\",\n      \"index\": 2\n    }\n  ],\n  \"total\": 3,\n  \"source_language\": \"en\",\n  \"target_language\": \"es\",\n  \"processing_time_ms\": 120\n}"
-						}
-					]
-				}
-			],
-			"description": "Text translation endpoints without audio processing"
-		},
-		{
-			"name": "Text-to-Speech",
-			"item": [
-				{
-					"name": "Generate TTS Audio",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{auth_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"text\": \"Hello, this is a test message\",\n  \"language\": \"en\",\n  \"format\": \"wav\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/tts/generate",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"tts",
-								"generate"
-							]
-						},
-						"description": "Generate and download TTS audio for the provided text. Returns binary audio data."
-					},
-					"response": [
-						{
-							"name": "Success Response",
-							"originalRequest": {
-								"method": "POST",
-								"header": [
-									{
-										"key": "Content-Type",
-										"value": "application/json"
-									},
-									{
-										"key": "Authorization",
-										"value": "Bearer {{auth_token}}"
-									}
-								],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"text\": \"Hello world\",\n  \"language\": \"en\"\n}"
-								},
-								"url": {
-									"raw": "{{base_url}}/tts/generate",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"tts",
-										"generate"
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "raw",
-							"header": [
-								{
-									"key": "Content-Type",
-									"value": "audio/wav"
-								}
-							],
-							"body": "Binary audio data..."
-						}
-					]
-				}
-			],
-			"description": "Text-to-speech audio generation endpoints"
-		}
-	]
+﻿{
+  "info": {
+    "_postman_id": "voice-translator-api-collection",
+    "name": "Voice-to-Voice Translator API",
+    "description": "REST collection aligned with current Go server implementation.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.1.0"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Status",
+      "item": [
+        {
+          "name": "Root",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": ["{{base_url}}"],
+              "path": [""]
+            }
+          }
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          }
+        },
+        {
+          "name": "Server Stats",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/stats",
+              "host": ["{{base_url}}"],
+              "path": ["stats"]
+            }
+          }
+        },
+        {
+          "name": "Runtime Config",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/config",
+              "host": ["{{base_url}}"],
+              "path": ["config"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Languages",
+      "item": [
+        {
+          "name": "Supported Languages",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/languages/supported",
+              "host": ["{{base_url}}"],
+              "path": ["languages", "supported"]
+            }
+          }
+        },
+        {
+          "name": "Translation Pairs",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/languages/pairs",
+              "host": ["{{base_url}}"],
+              "path": ["languages", "pairs"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Translation",
+      "item": [
+        {
+          "name": "Translate Text",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello, how are you?\",\n  \"source_language\": \"en\",\n  \"target_language\": \"hi\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/translate",
+              "host": ["{{base_url}}"],
+              "path": ["translate"]
+            }
+          }
+        },
+        {
+          "name": "Batch Translate",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"texts\": [\"Hello\", \"How are you?\", \"Thanks\"],\n  \"source_language\": \"en\",\n  \"target_language\": \"hi\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/translate/batch",
+              "host": ["{{base_url}}"],
+              "path": ["translate", "batch"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Text-to-Speech",
+      "item": [
+        {
+          "name": "Generate TTS (Unary)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello, this is a test message\",\n  \"language\": \"en\",\n  \"format\": \"wav\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/tts/generate",
+              "host": ["{{base_url}}"],
+              "path": ["tts", "generate"]
+            }
+          }
+        },
+        {
+          "name": "Generate TTS (HTTP Stream Relay)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello, this is streamed audio\",\n  \"language\": \"en\",\n  \"format\": \"wav\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/tts/generate?stream=true",
+              "host": ["{{base_url}}"],
+              "path": ["tts", "generate"],
+              "query": [
+                { "key": "stream", "value": "true" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Translate + TTS",
+      "item": [
+        {
+          "name": "Translate then TTS (Unary)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello, how are you?\",\n  \"source_language\": \"en\",\n  \"target_language\": \"hi\",\n  \"mode\": \"full_sentence\",\n  \"format\": \"wav\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/translate-tts",
+              "host": ["{{base_url}}"],
+              "path": ["translate-tts"]
+            }
+          }
+        },
+        {
+          "name": "Translate then TTS (HTTP Stream Relay)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"This is a streaming pipeline test\",\n  \"source_language\": \"en\",\n  \"target_language\": \"hi\",\n  \"mode\": \"full_sentence\",\n  \"format\": \"wav\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/translate-tts?stream=true",
+              "host": ["{{base_url}}"],
+              "path": ["translate-tts"],
+              "query": [
+                { "key": "stream", "value": "true" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Translate then TTS (Chunk Mode)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"hello chunk\",\n  \"source_language\": \"en\",\n  \"target_language\": \"hi\",\n  \"mode\": \"chunk\",\n  \"stream_id\": \"demo-stream-1\",\n  \"format\": \"wav\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/translate-tts",
+              "host": ["{{base_url}}"],
+              "path": ["translate-tts"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Speech-to-Text",
+      "item": [
+        {
+          "name": "STT Transcribe (Base64)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_data\": \"<BASE64_AUDIO>\",\n  \"language\": \"en\",\n  \"sample_rate\": 16000,\n  \"return_confidence\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/stt/transcribe",
+              "host": ["{{base_url}}"],
+              "path": ["stt", "transcribe"]
+            }
+          }
+        },
+        {
+          "name": "STT Transcribe File",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": "" },
+                { "key": "language", "value": "en", "type": "text" },
+                { "key": "return_confidence", "value": "true", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/stt/transcribe-file",
+              "host": ["{{base_url}}"],
+              "path": ["stt", "transcribe-file"]
+            }
+          }
+        },
+        {
+          "name": "STT Transcribe Batch",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_files\": [\"<BASE64_AUDIO_1>\", \"<BASE64_AUDIO_2>\"],\n  \"language\": \"en\",\n  \"sample_rate\": 16000,\n  \"return_confidence\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/stt/transcribe-batch",
+              "host": ["{{base_url}}"],
+              "path": ["stt", "transcribe-batch"]
+            }
+          }
+        }
+      ]
+    }
+  ]
 }

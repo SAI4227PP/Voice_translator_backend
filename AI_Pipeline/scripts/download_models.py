@@ -1,531 +1,217 @@
 """
-Script to download all required models for the voice translator.
-Professional parallel download implementation with progress tracking.
+Script to download required models for the voice translator.
+Downloads Vosk STT models and verifies local Svara ONNX model path.
 """
-import os
-import sys
 import asyncio
+import sys
+import time
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor
-import time
+from typing import Dict, List, Optional, Tuple
 
 try:
     import aiohttp
     from tqdm import tqdm
 except ImportError:
-    print("\n" + "="*70)
-    print("Missing Required Packages")
-    print("="*70)
-    print("\nThis script requires: aiohttp, tqdm")
-    print("\nPlease install them first:")
-    print("\n  Option 1 - Install pip:")
-    print("    sudo apt update")
-    print("    sudo apt install python3-pip")
-    print("\n  Option 2 - Install via apt (Ubuntu/Debian):")
-    print("    sudo apt install python3-aiohttp python3-tqdm")
-    print("\n  Option 3 - Install via pip:")
-    print("    pip3 install aiohttp tqdm")
-    print("\n  Option 4 - Use virtual environment:")
-    print("    python3 -m venv venv")
-    print("    source venv/bin/activate")
-    print("    pip install aiohttp tqdm")
-    print("    python scripts/download_models.py")
-    print("\n" + "="*70)
+    print("\nMissing required packages: aiohttp, tqdm")
+    print("Install with: pip install aiohttp tqdm")
     sys.exit(1)
 
 
 class ParallelDownloader:
-    """Professional parallel file downloader with progress tracking."""
-    
+    """Parallel downloader with progress tracking."""
+
     def __init__(self, max_concurrent: int = 3, chunk_size: int = 8192):
-        """Initialize downloader.
-        
-        Args:
-            max_concurrent: Maximum number of concurrent downloads
-            chunk_size: Download chunk size in bytes
-        """
         self.max_concurrent = max_concurrent
         self.chunk_size = chunk_size
         self.session: Optional[aiohttp.ClientSession] = None
-        
+
     async def __aenter__(self):
-        """Async context manager entry."""
         connector = aiohttp.TCPConnector(limit=self.max_concurrent)
-        timeout = aiohttp.ClientTimeout(total=3600)  # 1 hour timeout
+        timeout = aiohttp.ClientTimeout(total=3600)
         self.session = aiohttp.ClientSession(connector=connector, timeout=timeout)
         return self
-        
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
         if self.session:
             await self.session.close()
-            
-    async def download_file(
-        self, 
-        url: str, 
-        destination: Path,
-        description: str,
-        pbar: Optional[tqdm] = None
-    ) -> bool:
-        """Download a single file asynchronously.
-        
-        Args:
-            url: URL to download from
-            destination: Local file path
-            description: Description for progress bar
-            pbar: Optional parent progress bar
-            
-        Returns:
-            True if successful, False otherwise
-        """
+
+    async def download_file(self, url: str, destination: Path, description: str, pbar: tqdm) -> bool:
         try:
             async with self.session.get(url) as response:
                 if response.status != 200:
-                    if pbar:
-                        pbar.write(f"✗ {description}: HTTP {response.status}")
+                    pbar.write(f"x {description}: HTTP {response.status}")
+                    pbar.update(1)
                     return False
-                    
-                total_size = int(response.headers.get('content-length', 0))
-                
-                # Create file-specific progress bar
-                file_pbar = tqdm(
-                    total=total_size,
-                    unit='B',
-                    unit_scale=True,
-                    unit_divisor=1024,
-                    desc=description,
-                    leave=False
-                )
-                
+
+                total_size = int(response.headers.get("content-length", 0))
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                
-                with open(destination, 'wb') as f:
+
+                file_pbar = tqdm(total=total_size, unit="B", unit_scale=True, desc=description, leave=False)
+                with open(destination, "wb") as f:
                     async for chunk in response.content.iter_chunked(self.chunk_size):
                         f.write(chunk)
                         file_pbar.update(len(chunk))
-                        
                 file_pbar.close()
-                
-                if pbar:
-                    pbar.write(f"✓ {description}")
-                    pbar.update(1)
-                    
+                pbar.write(f"ok {description}")
+                pbar.update(1)
                 return True
-                
-        except asyncio.TimeoutError:
-            if pbar:
-                pbar.write(f"✗ {description}: Timeout")
-            return False
         except Exception as e:
-            if pbar:
-                pbar.write(f"✗ {description}: {str(e)[:50]}")
+            pbar.write(f"x {description}: {str(e)[:80]}")
+            pbar.update(1)
             return False
-            
-    async def download_multiple(
-        self,
-        downloads: List[Tuple[str, Path, str]]
-    ) -> Dict[str, bool]:
-        """Download multiple files in parallel.
-        
-        Args:
-            downloads: List of (url, destination, description) tuples
-            
-        Returns:
-            Dictionary mapping descriptions to success status
-        """
-        results = {}
-        
-        # Create overall progress bar
-        pbar = tqdm(
-            total=len(downloads),
-            desc="Overall Progress",
-            unit="file",
-            position=0
-        )
-        
-        # Create semaphore to limit concurrent downloads
-        semaphore = asyncio.Semaphore(self.max_concurrent)
-        
-        async def download_with_semaphore(url: str, dest: Path, desc: str):
-            async with semaphore:
-                success = await self.download_file(url, dest, desc, pbar)
-                results[desc] = success
-                return success
-                
-        # Schedule all downloads
-        tasks = [
-            download_with_semaphore(url, dest, desc)
-            for url, dest, desc in downloads
-        ]
-        
-        # Wait for all downloads to complete
-        await asyncio.gather(*tasks)
-        
+
+    async def download_multiple(self, downloads: List[Tuple[str, Path, str]]) -> Dict[str, bool]:
+        results: Dict[str, bool] = {}
+        pbar = tqdm(total=len(downloads), desc="Overall Progress", unit="file")
+        sem = asyncio.Semaphore(self.max_concurrent)
+
+        async def worker(url: str, dest: Path, desc: str):
+            async with sem:
+                results[desc] = await self.download_file(url, dest, desc, pbar)
+
+        await asyncio.gather(*[worker(url, dest, desc) for url, dest, desc in downloads])
         pbar.close()
-        
         return results
 
 
-async def download_vosk_models():
-    """Download Vosk speech recognition models in parallel."""
-    print("\n" + "="*60)
+async def download_vosk_models() -> None:
+    print("\n" + "=" * 60)
     print("Downloading Vosk STT Models")
-    print("="*60)
-    
+    print("=" * 60)
+
     models_dir = Path("models/stt")
     models_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Define all language models to download
-    # NOTE: Only English, Hindi, Telugu, and Gujarati have available Vosk models
-    # Other Indian languages don't have models yet on Vosk repository
+
     models = {
         "en": {
             "url": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
             "extracted_name": "vosk-model-small-en-us-0.15",
-            "display_name": "English"
+            "display_name": "English",
         },
         "hi": {
             "url": "https://alphacephei.com/vosk/models/vosk-model-hi-0.22.zip",
             "extracted_name": "vosk-model-hi-0.22",
-            "display_name": "Hindi"
+            "display_name": "Hindi",
         },
         "te": {
             "url": "https://alphacephei.com/vosk/models/vosk-model-small-te-0.42.zip",
             "extracted_name": "vosk-model-small-te-0.42",
-            "display_name": "Telugu"
+            "display_name": "Telugu",
         },
         "gu": {
             "url": "https://alphacephei.com/vosk/models/vosk-model-small-gu-0.42.zip",
             "extracted_name": "vosk-model-small-gu-0.42",
-            "display_name": "Gujarati"
+            "display_name": "Gujarati",
         },
         "bn": {
             "url": "https://alphacephei.com/vosk/models/vosk-model-en-in-0.5.zip",
             "extracted_name": "vosk-model-en-in-0.5",
-            "display_name": "Bengali (Indian English)"
-        }
+            "display_name": "Bengali (Indian English)",
+        },
     }
-    
-    # Prepare download list (skip existing models)
-    downloads = []
-    skipped = []
-    
-    for lang_code, model_info in models.items():
+
+    downloads: List[Tuple[str, Path, str]] = []
+    for lang_code, model in models.items():
         target_dir = models_dir / f"vosk-{lang_code}"
-        
-        if target_dir.exists():
-            skipped.append(model_info['display_name'])
-            continue
-            
-        model_path = models_dir / f"vosk-model-{lang_code}.zip"
-        downloads.append((
-            model_info['url'],
-            model_path,
-            f"Vosk {model_info['display_name']}"
-        ))
-    
-    if skipped:
-        print(f"\nSkipping existing models: {', '.join(skipped)}")
-    
-    if not downloads:
-        print("\n✓ All Vosk models already downloaded!")
-        return
-    
-    print(f"\nDownloading {len(downloads)} models in parallel...")
-    
-    # Download all models in parallel
-    async with ParallelDownloader(max_concurrent=3) as downloader:
-        results = await downloader.download_multiple(downloads)
-    
-    # Extract downloaded models
-    print("\n\nExtracting models...")
-    extraction_pbar = tqdm(total=len(downloads), desc="Extraction", unit="model")
-    
-    for lang_code, model_info in models.items():
-        target_dir = models_dir / f"vosk-{lang_code}"
-        
         if target_dir.exists():
             continue
-            
-        model_path = models_dir / f"vosk-model-{lang_code}.zip"
-        desc = f"Vosk {model_info['display_name']}"
-        
-        if not results.get(desc, False):
-            extraction_pbar.write(f"✗ Skipping {model_info['display_name']} (download failed)")
+        downloads.append((model["url"], models_dir / f"vosk-model-{lang_code}.zip", f"Vosk {model['display_name']}"))
+
+    if downloads:
+        async with ParallelDownloader(max_concurrent=3) as downloader:
+            results = await downloader.download_multiple(downloads)
+    else:
+        results = {}
+        print("All Vosk models already exist.")
+
+    print("\nExtracting models...")
+    extraction_pbar = tqdm(total=len(models), desc="Extraction", unit="model")
+    for lang_code, model in models.items():
+        target_dir = models_dir / f"vosk-{lang_code}"
+        zip_path = models_dir / f"vosk-model-{lang_code}.zip"
+
+        if target_dir.exists():
             extraction_pbar.update(1)
             continue
-        
+        if downloads and not results.get(f"Vosk {model['display_name']}", False):
+            extraction_pbar.update(1)
+            continue
+        if not zip_path.exists():
+            extraction_pbar.update(1)
+            continue
+
         try:
-            if not model_path.exists():
-                extraction_pbar.write(f"✗ {model_info['display_name']}: File not found")
-                extraction_pbar.update(1)
-                continue
-                
-            # Extract the model
-            with zipfile.ZipFile(model_path, 'r') as zip_ref:
-                zip_ref.extractall(models_dir)
-            
-            # Rename to standard format
-            extracted_path = models_dir / model_info['extracted_name']
-            if extracted_path.exists():
-                extracted_path.rename(target_dir)
-                extraction_pbar.write(f"✓ {model_info['display_name']} extracted")
-            
-            # Clean up zip file
-            model_path.unlink()
-            
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(models_dir)
+            extracted = models_dir / model["extracted_name"]
+            if extracted.exists():
+                extracted.rename(target_dir)
+            zip_path.unlink(missing_ok=True)
         except Exception as e:
-            extraction_pbar.write(f"✗ {model_info['display_name']}: {str(e)[:50]}")
-            if model_path.exists():
-                model_path.unlink()
-        
+            print(f"x Failed to extract {model['display_name']}: {str(e)[:80]}")
         extraction_pbar.update(1)
-    
+
     extraction_pbar.close()
-    print("\n✓ Vosk models setup complete!")
 
 
-
-async def install_argos_packages():
-    """Install Argos Translate language packages in parallel."""
-    print("\n" + "="*60)
-    print("Installing Argos Translate Packages")
-    print("="*60)
-    
-    # Set ARGOS_PACKAGES_DIR to use volume-mounted directory
-    argos_dir = Path("models/translate/argos-packages")
-    argos_dir.mkdir(parents=True, exist_ok=True)
-    os.environ['ARGOS_PACKAGES_DIR'] = str(argos_dir.absolute())
-    print(f"\n✓ Using package directory: {argos_dir.absolute()}")
-    
-    try:
-        import argostranslate.package
-        
-        # Update package index
-        print("\nUpdating package index...")
-        await asyncio.get_event_loop().run_in_executor(
-            None, 
-            argostranslate.package.update_package_index
-        )
-        
-        # Get available packages
-        available_packages = argostranslate.package.get_available_packages()
-        
-        # Define language pairs to install - Only available packages
-        # NOTE: Argos Translate only has Hindi and Bengali packages available
-        # Other Indian languages (Telugu, Tamil, Kannada, Malayalam, Gujarati, Marathi) 
-        # don't have translation packages in Argos repository yet
-        language_pairs = [
-            ("en", "hi", "English", "Hindi"),
-            ("hi", "en", "Hindi", "English"),
-            ("en", "bn", "English", "Bengali"),
-            ("bn", "en", "Bengali", "English"),
-        ]
-        
-        print(f"\n✓ Strategy: English as bridge language")
-        print(f"✓ Installing {len(language_pairs)} available translation packages")
-        print(f"✓ Available: Hindi, Bengali (Other Indian languages not yet in Argos)")
-        print(f"✓ Indian-to-Indian uses bridge: Source→English→Target\n")
-        
-        # Use ThreadPoolExecutor for parallel installation
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            pbar = tqdm(total=len(language_pairs), desc="Installing packages", unit="pkg")
-            
-            def install_package(pair):
-                from_code, to_code, from_name, to_name = pair
-                
-                packages = [
-                    pkg for pkg in available_packages
-                    if pkg.from_code == from_code and pkg.to_code == to_code
-                ]
-                
-                if not packages:
-                    pbar.write(f"✗ {from_name}→{to_name}: Not available")
-                    return False
-                    
-                try:
-                    argostranslate.package.install_from_path(
-                        packages[0].download()
-                    )
-                    pbar.write(f"✓ {from_name}→{to_name}")
-                    return True
-                except Exception as e:
-                    pbar.write(f"✗ {from_name}→{to_name}: {str(e)[:40]}")
-                    return False
-                finally:
-                    pbar.update(1)
-            
-            # Install packages in parallel
-            results = list(executor.map(install_package, language_pairs))
-            pbar.close()
-        
-        installed_count = sum(results)
-        print(f"\n✓ Argos Translate: {installed_count}/{len(language_pairs)} packages installed")
-        return True
-        
-    except ImportError:
-        print("\n✗ Error: argostranslate not installed")
-        print("  Run: pip install -r requirements.txt")
-        return False
-    except Exception as e:
-        print(f"\n✗ Error installing packages: {str(e)[:60]}")
-        print("  Packages will be installed on first use")
-        return False
-
-
-
-def setup_tts_models():
-    """Setup TTS models (Coqui TTS downloads on first use)."""
-    print("\n" + "="*60)
+def setup_tts_models() -> None:
+    print("\n" + "=" * 60)
     print("TTS Model Setup")
-    print("="*60)
-    
-    # Create TTS directory
-    tts_dir = Path("models/tts/coqui-models")
+    print("=" * 60)
+
+    tts_dir = Path("models/tts/svara")
     tts_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Check if TTS is installed
-    try:
-        from TTS.api import TTS
-        print("\n✓ Coqui TTS library installed")
-    except ImportError:
-        print("\n⚠ Coqui TTS not installed")
-        print("  Install with: pip install TTS")
-        print("  Or: pip install -r requirements.txt\n")
-        return
-    
-    print("\n📋 Supported TTS Languages:")
-    print("  • English (en) - XTTS v2")
-    print("  • Hindi (hi), Bengali (bn), Telugu (te), Tamil (ta)")
-    print("  • Marathi (mr), Gujarati (gu), Kannada (kn), Malayalam (ml)")
-    print("  • Punjabi (pa), Urdu (ur), Assamese (as), Odia (or)")
-    print("  • Plus 15 more European/Asian languages via XTTS v2")
-    
-    print("\n✓ TTS models auto-download on first use (no pre-download needed)")
-    
-    # Optional: Pre-download commonly used models
-    print("\n💡 To pre-download models, use Python:")
-    print("  from TTS.api import TTS")
-    print("  # For English/European languages:")
-    print("  TTS('tts_models/multilingual/multi-dataset/xtts_v2')")
-    print("  # For Indian languages (example):")
-    print("  TTS('tts_models/hin/fairseq/vits')  # Hindi")
-    print("  TTS('tts_models/ben/fairseq/vits')  # Bengali")
-    print()
+    onnx_path = tts_dir / "svara_tts.onnx"
+    if onnx_path.exists():
+        print(f"Found local ONNX model: {onnx_path}")
+    else:
+        print("Missing local ONNX model for TTS.")
+        print("Generate it with:")
+        print("python scripts/export_svara_onnx.py --model-id kenpath/svara-tts-v1 --output models/tts/svara/svara_tts.onnx")
 
 
 def check_existing_models() -> Tuple[bool, List[str]]:
-    """Check if models already exist.
-    
-    Returns:
-        Tuple of (all_exist, missing_models)
-    """
-    missing = []
-    
-    # Check Vosk models
+    missing: List[str] = []
     models_dir = Path("models/stt")
     required_vosk = ["vosk-en", "vosk-hi", "vosk-te", "vosk-gu", "vosk-bn"]
     for lang in required_vosk:
         if not (models_dir / lang).exists():
             missing.append(f"Vosk {lang}")
-    
-    # Check Argos packages
-    argos_dir = Path("models/translate/argos-packages")
-    if not argos_dir.exists() or len(list(argos_dir.glob("*.argosmodel"))) < 4:
-        missing.append("Argos translation packages")
-    
-    # Check TTS directory (just needs to exist)
-    tts_dir = Path("models/tts/coqui-models")
-    if not tts_dir.exists():
-        missing.append("TTS directory")
-    
+
     return len(missing) == 0, missing
 
 
-async def main():
-    """Main async function."""
-    print("\n" + "="*70)
-    print(" " * 15 + "Voice-to-Voice Translator")
-    print(" " * 20 + "Model Downloader")
-    print("="*70)
-    
-    # Create models directory
+async def main() -> None:
+    print("\n" + "=" * 70)
+    print("Voice-to-Voice Translator Model Downloader")
+    print("=" * 70)
+
     Path("models").mkdir(exist_ok=True)
-    
-    # Check if models already exist
+
     all_exist, missing = check_existing_models()
+    # Always validate local TTS ONNX presence, even when STT models already exist.
+    setup_tts_models()
     if all_exist:
-        print("\n✓ All models already downloaded!")
-        print("✓ Skipping download to save time and bandwidth")
-        print("\n" + "="*70)
-        print("\n🚀 Models are ready!")
-        print("\nYou can now run the server:")
-        print("  python app/main.py")
-        print("\nOr with Docker:")
-        print("  docker-compose up -d")
-        print()
+        print("All required STT model directories already exist.")
         return
-    
-    print(f"\n📦 Missing models detected: {len(missing)}")
-    for model in missing:
-        print(f"  • {model}")
-    print()
-    
+
+    print(f"Missing items: {len(missing)}")
+    for item in missing:
+        print(f"- {item}")
+
     start_time = time.time()
-    
-    # Download models
-    try:
-        await download_vosk_models()
-        await install_argos_packages()
-        setup_tts_models()
-        
-        elapsed = time.time() - start_time
-        minutes, seconds = divmod(int(elapsed), 60)
-        
-        print("="*70)
-        print(f"\n✓ All models downloaded successfully!")
-        print(f"✓ Total time: {minutes}m {seconds}s\n")
-        print("="*70)
-        
-        # Show language support summary
-        print("\n📊 Language Support Summary:")
-        print("  STT (Speech-to-Text):  5 languages")
-        print("    ✓ English, Hindi, Telugu, Gujarati, Bengali")
-        print("\n  Translation:           2 bidirectional pairs (4 directions)")
-        print("    ✓ English ↔ Hindi")
-        print("    ✓ English ↔ Bengali")
-        print("    ℹ Other pairs: Use English as bridge (e.g., Hindi→English→Bengali)")
-        print("\n  TTS (Text-to-Speech):  13 Indian languages (+ 15 more via XTTS)")
-        print("    ✓ English")
-        print("    ✓ Hindi, Bengali, Telugu, Tamil")
-        print("    ✓ Marathi, Gujarati, Kannada, Malayalam")
-        print("    ✓ Punjabi, Urdu, Assamese, Odia")
-        
-        print("\n" + "="*70)
-        print("\n🚀 Ready to Start!")
-        print("\nYou can now run the server:")
-        print("  python app/main.py")
-        print("\nOr with Docker:")
-        print("  docker-compose up -d")
-        print("\nOr with Uvicorn:")
-        print("  uvicorn app.main:app --host 0.0.0.0 --port 8000\n")
-        
-    except KeyboardInterrupt:
-        print("\n\n✗ Download cancelled by user")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n\n✗ Error during download: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    await download_vosk_models()
+
+    elapsed = int(time.time() - start_time)
+    mins, secs = divmod(elapsed, 60)
+    print("\n" + "=" * 70)
+    print(f"Done in {mins}m {secs}s")
+    print("Translation engine: Sarvam (no Argos package download)")
+    print("TTS ONNX is expected from app image build path (/app/tts-models/svara_tts.onnx) in Docker runtime.")
 
 
 if __name__ == "__main__":
-    # Run async main
-    if sys.platform == 'win32':
-        # Windows-specific event loop policy
+    if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
     asyncio.run(main())

@@ -1,0 +1,6 @@
+# Runtime deps used by production container (Go server + Python STT bridge)
+numpy==1.24.3
+vosk==0.3.45
+aiohttp==3.9.1
+tqdm==4.66.1
+PyJWT==2.8.0

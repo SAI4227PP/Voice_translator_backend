@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package voice_translator;
+option go_package = "voice_translator_go_server/proto;gen";
 
 // ==============================================================================
 // STT Service - Speech-to-Text
@@ -122,6 +123,7 @@ message TTSRequest {
   string voice_id = 5;           // Optional specific voice
   float speed = 6;               // Speech speed (default: 1.0)
   int32 sample_rate = 7;         // Desired sample rate (default: 16000)
+  string format = 8;             // Output format (currently only "wav")
 }
 
 message TTSResponse {

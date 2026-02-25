@@ -1,50 +1,89 @@
-﻿services:
+services:
   model-downloader:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.downloader
-    volumes:
-      - voice-models:/app/models
-    environment:
-      - ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages
-      - PYTHONUNBUFFERED=1
-    container_name: voice-translator-downloader
-    restart: "no"
-    command: python scripts/download_models.py
-
-  voice-translator:
+    image: ai_pipeline-downloader:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: voice-translator-app
+      target: model-downloader
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+      cache_from:
+        - ai_pipeline-downloader:latest
+    volumes:
+      - voice-models:/app/models
+    environment:
+      - PYTHONUNBUFFERED=1
+    container_name: AI_Pipeline-downloader
+    restart: "no"
+    profiles: ["setup"]
+    command: python scripts/download_models.py
+
+  AI_Pipeline:
+    image: ai_pipeline:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      cache_from:
+        - ai_pipeline:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+        - HF_TOKEN=${HF_TOKEN:-}
+        - SARVAM_HF_MODEL_ID=${SARVAM_HF_MODEL_ID:-sarvamai/sarvam-1}
+        - SVARA_TTS_HF_MODEL_ID=${SVARA_TTS_HF_MODEL_ID:-kenpath/svara-tts-v1}
+        - SVARA_TTS_GGUF_FILE=${SVARA_TTS_GGUF_FILE:-svara-tts-v1.Q5_K_M.gguf}
+    container_name: AI_Pipeline
     ports:
       - "7860:7860"
+      - "50051:50051"
     volumes:
       - voice-models:/app/models
     environment:
       - HOST=0.0.0.0
       - PORT=7860
+      - GRPC_PORT=50051
       - LOG_LEVEL=INFO
       - ENVIRONMENT=production
       - DEBUG=False
-      - ARGOS_PACKAGES_DIR=/app/models/translate/argos-packages
+      - TRANSLATION_ENGINE=sarvam
+      # Translator model format: GGUF Q4_K_M
+      - SARVAM_MODEL_PATH=/app/llm-models/sarvam-1-q4.gguf
+      - SARVAM_CPP_BINARY_PATH=/app/bin/translate_engine
+      - SARVAM_MAX_CONCURRENT_PROCESSES=1
+      - SARVAM_DAEMON_WORKERS=2
+      - SARVAM_DAEMON_QUEUE_SIZE=256
+      - SARVAM_MAX_INPUT_CHARS=4000
+      - SARVAM_GPU_LAYERS=0
+      - LLAMA_SERVER_PORT=8089
+      - SARVAM_TIMEOUT_SECONDS=30
+      - TRANSLATION_RETRY_COUNT=1
+      - TRANSLATION_RETRY_BACKOFF_MS=250
+      - TRANSLATION_CIRCUIT_BREAKER_THRESHOLD=5
+      - TRANSLATION_CIRCUIT_BREAKER_RESET_SECONDS=30
+      - LLAMA_CPP_PATH=/app/llama.cpp
+      - LLAMA_CLI_PATH=-
       - NUMBA_CACHE_DIR=/tmp/numba_cache
       - XDG_CACHE_HOME=/tmp
       - HOME=/app
-      - SPACY_NO_DOWNLOADS=1
-      - PIP_NO_INPUT=1
-      - PIP_USER=0
       - STT_ENABLE_WARM_START=True
       - STT_PRELOAD_LANGUAGES=en,hi
-      - TRANSLATION_ENABLE_WARM_START=True
+      - TRANSLATION_ENABLE_WARM_START=False
       - TRANSLATION_WARM_START_MODE=common
       - TRANSLATION_COMMON_PAIRS=en-hi,hi-en,en-bn,bn-en
+      - TTS_ENGINE=svara
+      # TTS model format: GGUF (local path)
+      - SVARA_TTS_CPP_BINARY_PATH=/app/bin/tts_engine
+      - SVARA_TTS_MODEL_ID=/app/llm-models/${SVARA_TTS_GGUF_FILE:-svara-tts-v1.Q5_K_M.gguf}
+      - SVARA_TTS_TIMEOUT_SECONDS=90
+      - SVARA_TTS_MAX_INPUT_CHARS=600
+      - SVARA_TTS_DEFAULT_VOICE=anushka
+      - SVARA_TTS_DAEMON_WORKERS=2
+      - SVARA_TTS_DAEMON_QUEUE_SIZE=128
+      - SVARA_TTS_THREADS=2
+      - SVARA_TTS_CONTEXT_SIZE=1024
+      - SVARA_TTS_PIN_WORKERS=false
       - TTS_ENABLE_WARM_START=True
       - TTS_PRELOAD_LANGUAGES=en,hi,bn,ta
     restart: unless-stopped
-    depends_on:
-      model-downloader:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
       interval: 30s
@@ -55,3 +94,8 @@
 volumes:
   voice-models:
     name: voice-models
+
+
+
+
+

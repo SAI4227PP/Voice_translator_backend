@@ -1,8 +1,8 @@
 """Pipeline module initialization."""
 from app.pipeline.pipeline_manager import PipelineManager, PipelineResult, get_pipeline_manager
 from app.pipeline.stt import VoskEngine, STTFactory
-from app.pipeline.translate import ArgosEngine, Translator, get_translator
-from app.pipeline.tts import CoquiEngine, TTSFactory
+from app.pipeline.translation_runtime import SarvamEngine, Translator, get_translator
+from app.pipeline.tts_runtime import CppTTSEngine, TTSFactory, get_tts_factory
 
 __all__ = [
     "PipelineManager",
@@ -10,9 +10,11 @@ __all__ = [
     "get_pipeline_manager",
     "VoskEngine",
     "STTFactory",
-    "ArgosEngine",
+    "SarvamEngine",
     "Translator",
     "get_translator",
-    "CoquiEngine",
+    "CppTTSEngine",
     "TTSFactory",
+    "get_tts_factory",
 ]
+

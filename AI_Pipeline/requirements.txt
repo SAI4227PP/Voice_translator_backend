@@ -1,73 +1,14 @@
-# Core dependencies
+# Base runtime deps
+-r requirements.runtime.txt
+
+# Model export tooling (scripts/export_svara_onnx.py)
+torch==2.6.0
+transformers==4.55.4
+onnxruntime==1.18.1
+
+# Test deps used by current tests/*
 fastapi==0.104.1
-uvicorn[standard]==0.24.0
-websockets==12.0
-python-dotenv==1.0.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
-
-# Audio processing
-numpy==1.24.3
-soundfile==0.12.1
-pyaudio==0.2.13
-
-# Speech-to-Text
-vosk==0.3.45
-
-# Translation
-argostranslate
-spacy==3.8.0
-xx-sent-ud-sm @ https://github.com/explosion/spacy-models/releases/download/xx_sent_ud_sm-3.8.0/xx_sent_ud_sm-3.8.0-py3-none-any.whl
-
-# Text-to-Speech
-TTS==0.21.1
-pyttsx3==2.90
-
-# Async and concurrency
-aiofiles==23.2.1
-asyncio==3.4.3
-aiohttp==3.9.1
-
-# Progress and utilities
-tqdm==4.66.1
-python-multipart==0.0.6
-httpx==0.25.1
-tenacity==8.2.3
-
-# Monitoring and logging
-structlog==23.2.0
-colorama==0.4.6
-
-# Security
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-PyJWT==2.8.0
-
-# Rate limiting
-slowapi==0.1.9
-
-# Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0
 pytest-mock==3.12.0
-
-# Development tools
-black==23.12.0
-flake8==6.1.0
-mypy==1.7.1
-isort==5.13.0
-
-# Optional: Database support
-# sqlalchemy==2.0.23
-# alembic==1.13.0
-# asyncpg==0.29.0
-
-# Optional: Redis support
-# redis==5.0.1
-# aioredis==2.0.1
-
-# Optional: Monitoring
-# prometheus-client==0.19.0
-# opentelemetry-api==1.21.0
-# opentelemetry-sdk==1.21.0
