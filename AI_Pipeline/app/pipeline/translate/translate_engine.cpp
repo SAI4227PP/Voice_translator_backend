@@ -360,26 +360,23 @@ std::string build_prompt(const std::string& text, const std::string& source_lang
         return "target language";
     };
     std::string prompt;
-    prompt.reserve(clean_text.size() + 196);
-    prompt += "<";
-    prompt += source_lang;
-    prompt += "2";
-    prompt += target_lang;
-    prompt += ">\nTranslate the following text from ";
+    prompt.reserve(clean_text.size() + 256);
+    prompt += "Translate the following text from ";
     prompt += lang_name(source_lang);
     prompt += " to ";
     prompt += lang_name(target_lang);
-    prompt += ". Return only translated text in ";
-    prompt += lang_name(target_lang);
-    prompt += ".\nText: ";
+    prompt += ". Use target language code: ";
+    prompt += target_lang;
+    prompt += ". Return only the final translation text.\n";
+    prompt += "Input: \"";
     prompt += clean_text;
-    prompt += "\nTranslation:";
+    prompt += "\"\nOutput:";
     return prompt;
 }
 
 std::string build_prompt_strict(const std::string& text, const std::string& source_lang, const std::string& target_lang) {
     std::string prompt = build_prompt(text, source_lang, target_lang);
-    prompt += "\nRules: Do not copy source text. Do not respond in English unless target is en. Output only final translation.";
+    prompt += "\nRules: Do not answer the user's question. Do not copy source text. Do not respond in English unless target is en.";
     return prompt;
 }
 
@@ -1060,7 +1057,7 @@ private:
             payload.append(strict_mode ? "0.0" : "0.01");
             payload.append(",\"top_p\":0.9,\"repeat_penalty\":1.1,\"cache_prompt\":true,\"stream\":true,\"id_slot\":");
             payload.append(std::to_string(slot));
-            payload.append(",\"stop\":[\"\\n\"]}");
+            payload.push_back('}');
 
             const std::string url = "http://127.0.0.1:" + std::to_string(cfg_.server_port) + "/completion";
             auto [out, err] = http_post_json_streaming(url, payload, 120L);

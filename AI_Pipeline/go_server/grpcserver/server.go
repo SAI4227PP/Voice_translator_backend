@@ -72,7 +72,7 @@ func (s *Service) RecognizeAudio(_ context.Context, req *pb.AudioRequest) (*pb.R
 	if len(req.GetAudioData()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "audio_data is required")
 	}
-	lang := strings.TrimSpace(req.GetLanguage())
+	lang := normalizeLangCode(req.GetLanguage())
 	if lang == "" {
 		return nil, status.Error(codes.InvalidArgument, "language is required")
 	}
@@ -114,8 +114,8 @@ func (s *Service) RecognizeStream(stream pb.STTService_RecognizeStreamServer) er
 			return err
 		}
 
-		language = chunk.GetLanguage()
-		if strings.TrimSpace(language) == "" {
+		language = normalizeLangCode(chunk.GetLanguage())
+		if language == "" {
 			return status.Error(codes.InvalidArgument, "language is required")
 		}
 		userID = chunk.GetUserId()
@@ -169,8 +169,8 @@ func (s *Service) Translate(_ context.Context, req *pb.TranslationRequest) (*pb.
 		return nil, err
 	}
 
-	source := strings.TrimSpace(req.GetSourceLang())
-	target := strings.TrimSpace(req.GetTargetLang())
+	source := normalizeLangCode(req.GetSourceLang())
+	target := normalizeLangCode(req.GetTargetLang())
 	if strings.EqualFold(source, target) {
 		return &pb.TranslationResponse{
 			OriginalText:     req.GetText(),
@@ -237,7 +237,8 @@ func (s *Service) Synthesize(_ context.Context, req *pb.TTSRequest) (*pb.TTSResp
 	}
 
 	start := time.Now()
-	audio, err := s.deps.TTS.Synthesize(req.GetLanguage(), req.GetText())
+	language := normalizeLangCode(req.GetLanguage())
+	audio, err := s.deps.TTS.Synthesize(language, req.GetText())
 	if err != nil {
 		return nil, mapWorkerError(err)
 	}
@@ -259,7 +260,7 @@ func (s *Service) Synthesize(_ context.Context, req *pb.TTSRequest) (*pb.TTSResp
 
 	return &pb.TTSResponse{
 		AudioData:         audio,
-		Language:          req.GetLanguage(),
+		Language:          language,
 		ProcessingTimeMs:  time.Since(start).Milliseconds(),
 		TaskId:            req.GetTaskId(),
 		SampleRate:        sampleRate,
@@ -283,6 +284,7 @@ func (s *Service) SynthesizeStream(req *pb.TTSRequest, stream pb.TTSService_Synt
 		}
 	}
 
+	language := normalizeLangCode(req.GetLanguage())
 	for i := 0; i < len(audio); i += chunkSize {
 		end := i + chunkSize
 		if end > len(audio) {
@@ -292,7 +294,7 @@ func (s *Service) SynthesizeStream(req *pb.TTSRequest, stream pb.TTSService_Synt
 		if sendErr := stream.Send(&pb.AudioChunk{
 			AudioData:  audio[i:end],
 			UserId:     req.GetUserId(),
-			Language:   req.GetLanguage(),
+			Language:   language,
 			IsFinal:    isFinal,
 			SampleRate: resp.GetSampleRate(),
 		}); sendErr != nil {
@@ -397,8 +399,8 @@ func (s *Service) validateTranslationRequest(req *pb.TranslationRequest) error {
 	if strings.TrimSpace(req.GetText()) == "" {
 		return status.Error(codes.InvalidArgument, "text is required")
 	}
-	source := strings.TrimSpace(req.GetSourceLang())
-	target := strings.TrimSpace(req.GetTargetLang())
+	source := normalizeLangCode(req.GetSourceLang())
+	target := normalizeLangCode(req.GetTargetLang())
 	if source == "" || target == "" {
 		return status.Error(codes.InvalidArgument, "source_lang and target_lang are required")
 	}
@@ -419,7 +421,7 @@ func (s *Service) validateTTSRequest(req *pb.TTSRequest) error {
 	if strings.TrimSpace(req.GetText()) == "" {
 		return status.Error(codes.InvalidArgument, "text is required")
 	}
-	lang := strings.TrimSpace(req.GetLanguage())
+	lang := normalizeLangCode(req.GetLanguage())
 	if lang == "" {
 		return status.Error(codes.InvalidArgument, "language is required")
 	}
@@ -435,6 +437,10 @@ func (s *Service) validateTTSRequest(req *pb.TTSRequest) error {
 		return status.Errorf(codes.InvalidArgument, "unsupported format: %s", format)
 	}
 	return nil
+}
+
+func normalizeLangCode(v string) string {
+	return strings.ToLower(strings.TrimSpace(v))
 }
 
 func mapWorkerError(err error) error {

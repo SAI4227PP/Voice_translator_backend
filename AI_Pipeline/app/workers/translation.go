@@ -130,6 +130,11 @@ func sanitizeTranslatedText(v string) string {
 		}
 		s = strings.TrimSpace(s[end+1:])
 	}
+	for _, p := range []string{"Translation:", "Output:", "Answer:"} {
+		if strings.HasPrefix(s, p) {
+			s = strings.TrimSpace(strings.TrimPrefix(s, p))
+		}
+	}
 	return s
 }
 

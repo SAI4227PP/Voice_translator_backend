@@ -104,13 +104,6 @@ func main() {
 	}
 	server.SetMessageRouter(messaging.NewMessageRouter(state.roomMgr, server.GetConnectionManager()))
 
-	log.Printf("startup_phase=warm_start status=begin translation=%t tts=%t stt=%t",
-		state.settings.TranslationEnableWarmStart,
-		state.settings.TTSEnableWarmStart,
-		state.settings.STTEnableWarmStart,
-	)
-	warmStart(state)
-	log.Printf("startup_phase=warm_start status=done")
 	defer state.translator.Close()
 	defer state.tts.Close()
 
@@ -135,6 +128,16 @@ func main() {
 	}
 	log.Printf("startup_phase=http_grpc_bridge status=done target=%s", state.internalGRPCAddress())
 	defer state.closeInternalGRPCClients()
+
+	go func() {
+		log.Printf("startup_phase=warm_start status=begin translation=%t tts=%t stt=%t",
+			state.settings.TranslationEnableWarmStart,
+			state.settings.TTSEnableWarmStart,
+			state.settings.STTEnableWarmStart,
+		)
+		warmStart(state)
+		log.Printf("startup_phase=warm_start status=done")
+	}()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", state.rootHandler)
@@ -371,6 +374,17 @@ func (a *appState) translateHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	req.Text = strings.TrimSpace(req.Text)
+	req.SourceLanguage = normalizeLangCode(req.SourceLanguage)
+	req.TargetLanguage = normalizeLangCode(req.TargetLanguage)
+	if req.Text == "" {
+		writeError(w, http.StatusBadRequest, "text is required")
+		return
+	}
+	if req.SourceLanguage == "" || req.TargetLanguage == "" {
+		writeError(w, http.StatusBadRequest, "source_language and target_language are required")
+		return
+	}
 	langs := a.scanner.GetAvailableTranslationLanguages()
 	if _, ok := langs[req.SourceLanguage]; !ok {
 		writeLangError(w, http.StatusUnprocessableEntity, "Source language '"+req.SourceLanguage+"' is not supported", keysStringMap(langs), "Check /languages/supported for available languages")
@@ -378,6 +392,16 @@ func (a *appState) translateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, ok := langs[req.TargetLanguage]; !ok {
 		writeLangError(w, http.StatusUnprocessableEntity, "Target language '"+req.TargetLanguage+"' is not supported", keysStringMap(langs), "Check /languages/supported for available languages")
+		return
+	}
+	if req.SourceLanguage == req.TargetLanguage {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"original_text":      req.Text,
+			"translated_text":    req.Text,
+			"source_language":    req.SourceLanguage,
+			"target_language":    req.TargetLanguage,
+			"processing_time_ms": 0,
+		})
 		return
 	}
 
@@ -403,6 +427,16 @@ func (a *appState) batchTranslateHandler(w http.ResponseWriter, r *http.Request)
 	var req BatchTranslateRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.SourceLanguage = normalizeLangCode(req.SourceLanguage)
+	req.TargetLanguage = normalizeLangCode(req.TargetLanguage)
+	if req.SourceLanguage == "" || req.TargetLanguage == "" {
+		writeError(w, http.StatusBadRequest, "source_language and target_language are required")
+		return
+	}
+	if len(req.Texts) == 0 {
+		writeError(w, http.StatusBadRequest, "texts is required")
 		return
 	}
 	langs := a.scanner.GetAvailableTranslationLanguages()
@@ -445,6 +479,16 @@ func (a *appState) ttsGenerateHandler(w http.ResponseWriter, r *http.Request) {
 	var req TTSRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.Text = strings.TrimSpace(req.Text)
+	req.Language = normalizeLangCode(req.Language)
+	if req.Text == "" {
+		writeError(w, http.StatusBadRequest, "text is required")
+		return
+	}
+	if req.Language == "" {
+		writeError(w, http.StatusBadRequest, "language is required")
 		return
 	}
 	if req.Format == "" {
@@ -496,6 +540,17 @@ func (a *appState) translateTTSHandler(w http.ResponseWriter, r *http.Request) {
 	var req TranslateTTSRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.Text = strings.TrimSpace(req.Text)
+	req.SourceLanguage = normalizeLangCode(req.SourceLanguage)
+	req.TargetLanguage = normalizeLangCode(req.TargetLanguage)
+	if req.Text == "" {
+		writeError(w, http.StatusBadRequest, "text is required")
+		return
+	}
+	if req.SourceLanguage == "" || req.TargetLanguage == "" {
+		writeError(w, http.StatusBadRequest, "source_language and target_language are required")
 		return
 	}
 	if req.Format == "" {
@@ -589,6 +644,11 @@ func (a *appState) sttTranscribeHandler(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	req.Language = normalizeLangCode(req.Language)
+	if req.Language == "" {
+		writeError(w, http.StatusBadRequest, "language is required")
+		return
+	}
 	sttLangs := a.scanner.GetAvailableSTTLanguages()
 	if _, ok := sttLangs[req.Language]; !ok {
 		writeLangError(w, http.StatusUnprocessableEntity, "Language '"+req.Language+"' is not supported for STT", keysStringMap(sttLangs), "Check /languages/supported for available STT languages")
@@ -626,8 +686,8 @@ func (a *appState) sttTranscribeFileHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer file.Close()
-	language := r.FormValue("language")
-	if strings.TrimSpace(language) == "" {
+	language := normalizeLangCode(r.FormValue("language"))
+	if language == "" {
 		language = "en"
 	}
 	returnConfidence := strings.EqualFold(strings.TrimSpace(r.FormValue("return_confidence")), "true")
@@ -673,6 +733,11 @@ func (a *appState) sttTranscribeBatchHandler(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	req.Language = normalizeLangCode(req.Language)
+	if req.Language == "" {
+		writeError(w, http.StatusBadRequest, "language is required")
+		return
+	}
 	sttLangs := a.scanner.GetAvailableSTTLanguages()
 	if _, ok := sttLangs[req.Language]; !ok {
 		writeLangError(w, http.StatusUnprocessableEntity, "Language '"+req.Language+"' is not supported for STT", keysStringMap(sttLangs), "Check /languages/supported for available STT languages")
@@ -711,7 +776,7 @@ func decodeJSON(r *http.Request, out any) error {
 		return err
 	}
 	if len(strings.TrimSpace(string(body))) == 0 {
-		return io.EOF
+		return io.ErrUnexpectedEOF
 	}
 	return json.Unmarshal(body, out)
 }
@@ -732,7 +797,14 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 }
 
 func writeError(w http.ResponseWriter, code int, message string) {
+	if message == io.ErrUnexpectedEOF.Error() {
+		message = "request body is required"
+	}
 	writeJSON(w, code, map[string]any{"detail": message})
+}
+
+func normalizeLangCode(v string) string {
+	return strings.ToLower(strings.TrimSpace(v))
 }
 
 func writeLangError(w http.ResponseWriter, code int, errMsg string, available []string, message string) {
