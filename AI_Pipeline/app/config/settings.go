@@ -169,7 +169,7 @@ func LoadSettings() Settings {
 		TranslationWarmStartMode:    env("TRANSLATION_WARM_START_MODE", "common"),
 		TranslationCommonPairs:      env("TRANSLATION_COMMON_PAIRS", "en-hi,hi-en,en-bn,bn-en"),
 
-		SvaraModelID:         env("SVARA_TTS_MODEL_ID", "/app/llm-models/svara-tts-v1.Q5_K_M.gguf"),
+		SvaraModelID:         env("SVARA_TTS_MODEL_ID", "/app/llm-models/svara-tts-v1-backbone-f16.gguf"),
 		SvaraTimeoutSeconds:  envInt("SVARA_TTS_TIMEOUT_SECONDS", 90),
 		SvaraMaxInputChars:   envInt("SVARA_TTS_MAX_INPUT_CHARS", 600),
 		SvaraDefaultVoice:    env("SVARA_TTS_DEFAULT_VOICE", "anushka"),

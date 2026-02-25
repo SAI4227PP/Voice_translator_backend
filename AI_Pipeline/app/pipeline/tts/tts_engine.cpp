@@ -289,10 +289,6 @@ std::string resolve_vocoder_path(const std::string& configured) {
     if (!trim(configured).empty() && configured != "-" && fs::exists(configured)) {
         return configured;
     }
-    const char* kDefault = "/app/llm-models/svara-tts-v1-backbone-f16.gguf";
-    if (fs::exists(kDefault)) {
-        return kDefault;
-    }
     return "";
 }
 
@@ -584,12 +580,7 @@ private:
             err = "local_model_not_found";
             return false;
         }
-        const std::string resolved_vocoder = resolve_vocoder_path(cfg_.vocoder_model);
-        if (resolved_vocoder.empty()) {
-            err = "vocoder_model_not_found (set SVARA_TTS_VOCODER_MODEL=/app/llm-models/svara-tts-v1-backbone-f16.gguf)";
-            return false;
-        }
-        cfg_.vocoder_model = resolved_vocoder;
+        cfg_.vocoder_model = resolve_vocoder_path(cfg_.vocoder_model);
         llama_tts_path_ = llama_tts;
         return true;
 #else
